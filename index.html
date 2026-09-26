@@ -108,8 +108,8 @@
   .pill-scroll { display:flex; align-items:center; gap:8px; overflow-x:auto; padding-bottom:4px; }
   .mode-toggle { display:flex; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
   .mode-toggle button { flex:1; padding:8px 0; font-size:12px; }
-  .map-svg-wrap { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-  .map-svg-wrap svg { touch-action:manipulation; }
+  .map-svg-wrap { max-width:480px; max-height:60vh; overflow:auto; margin:0 auto; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
+  .map-svg-wrap svg { display:block; touch-action:manipulation; }
   #file-import { display:none; }
   .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 </style>
@@ -436,7 +436,7 @@ function ensureCampaign(data){
   d.battleLog = Array.isArray(d.battleLog) ? d.battleLog : [];
   d.oracleDice = d.oracleDice.map(die=>({id:die.id||uid(), name:die.name||'', formula:die.formula||''}));
   d.statblocks = (d.statblocks||[]).map(sb=>({
-    id: sb.id||uid(), name: sb.name||'Gegner', hp: sb.hp!=null?sb.hp:'10', notes: sb.notes||'',
+    id: sb.id||uid(), name: sb.name!=null?sb.name:'', hp: sb.hp!=null?sb.hp:'10', notes: sb.notes||'',
     statuses: (sb.statuses||[]).map(st=>({id:st.id||uid(), name:st.name||'Status', value: Array.isArray(st.value)&&st.value.length===6 ? st.value : [false,false,false,false,false,false]})),
   }));
   d.karteien = d.karteien.map(k=>({
@@ -548,6 +548,7 @@ let ui = {
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
+  showStatblockCharPicker:false,
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,
   editingRelationEdgeId:null, relationEdgeDraft:null,
@@ -1226,7 +1227,22 @@ function renderLinkPickerModal(){
 
 // ---- Statblocks ----
 function addStatblock(){
-  updateActive(camp=>({...camp, statblocks:[...camp.statblocks, {id:uid(), name:'Neuer Gegner', hp:'10', notes:'', statuses:[]}]}));
+  updateActive(camp=>({...camp, statblocks:[...camp.statblocks, {id:uid(), name:'', hp:'10', notes:'', statuses:[]}]}));
+  saveState(); render();
+}
+function toggleStatblockCharPicker(){ ui.showStatblockCharPicker = !ui.showStatblockCharPicker; render(); }
+function addStatblockFromCharacter(charId){
+  const active = getActive();
+  const c = active.characters.find(x=>x.id===charId);
+  if(!c) return;
+  let hp = '10';
+  outer: for(const s of c.sections){
+    for(const f of s.fields){
+      if(f.type==='counter' && /hp|leben|trefferpunkte|health/i.test(f.name)){ hp = f.value; break outer; }
+    }
+  }
+  updateActive(camp=>({...camp, statblocks:[...camp.statblocks, {id:uid(), name:c.name, hp, notes:'', statuses:[]}]}));
+  ui.showStatblockCharPicker = false;
   saveState(); render();
 }
 function onStatblockName(id, el){ updateActive(camp=>({...camp, statblocks: camp.statblocks.map(sb=>sb.id===id?{...sb,name:el.value}:sb)})); saveState(); }
@@ -2100,10 +2116,25 @@ function renderBattleTab(){
   html += renderResultsPanel('span-all', 'battle');
   html += renderDiceRollerPanel('battle');
   html += `<div class="row between span-all"><span class="label">⚔️ Statblocks</span>
-    <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="addStatblock()">+ Neu</button></div>`;
+    <div class="row" style="gap:6px;">
+      <button class="btn ${ui.showStatblockCharPicker?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleStatblockCharPicker()">Aus Charakter</button>
+      <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="addStatblock()">+ Statblock anlegen</button>
+    </div></div>`;
+  if(ui.showStatblockCharPicker){
+    if(active.characters.length===0){
+      html += `<div class="panel span-all"><span class="small-muted">Noch keine Charaktere angelegt.</span></div>`;
+    } else {
+      html += `<div class="panel span-all" style="gap:6px;">
+        <span class="small-muted">Charakter als Statblock übernehmen (Name + HP):</span>
+        <div class="row wrap" style="gap:6px;">
+          ${active.characters.map(c=>`<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="addStatblockFromCharacter('${c.id}')">${escapeHtml(c.name)}</button>`).join('')}
+        </div>
+      </div>`;
+    }
+  }
   if(active.statblocks.length===0){
     html += `<div class="panel empty span-all"><span>Noch keine Statblocks angelegt.</span>
-      <button class="btn btn-raised" onclick="addStatblock()">+ Ersten Gegner anlegen</button></div>`;
+      <button class="btn btn-raised" onclick="addStatblock()">+ Statblock anlegen</button></div>`;
   } else {
     html += active.statblocks.map(sb=>`
       <div class="panel">
@@ -2118,7 +2149,7 @@ function renderBattleTab(){
           <input type="number" value="${escapeHtml(sb.hp)}" oninput="onStatblockHp('${sb.id}', this)" style="width:64px;text-align:center;font-weight:600;">
           <button class="counter-btn" onclick="incrementStatblockHp('${sb.id}',1)">+</button>
         </div>
-        <textarea rows="3" placeholder="RK, Angriffe, Sonderfähigkeiten…" oninput="onStatblockNotes('${sb.id}', this)">${escapeHtml(sb.notes)}</textarea>
+        <textarea rows="3" oninput="onStatblockNotes('${sb.id}', this)">${escapeHtml(sb.notes)}</textarea>
         <div style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--border);padding-top:10px;">
           <div class="row between">
             <span class="small-muted">Status</span>
@@ -2611,7 +2642,13 @@ function addMapNode(){
   const cur = getCurrentMap();
   if(!cur) return;
   const idx = cur.nodes.length;
-  const node = {id:uid(), name:'Raum '+(idx+1), num: idx+1, x:60+(idx%4)*80, y:50+Math.floor(idx/4)*80, r:16, desc:''};
+  addMapNodeAt(60+(idx%4)*80, 50+Math.floor(idx/4)*80);
+}
+function addMapNodeAt(x, y){
+  const cur = getCurrentMap();
+  if(!cur) return;
+  const idx = cur.nodes.length;
+  const node = {id:uid(), name:'Raum '+(idx+1), num: idx+1, x:Math.round(x), y:Math.round(y), r:16, desc:''};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
   saveState(); render();
 }
@@ -2637,16 +2674,25 @@ function selectMapNode(id){
   render();
 }
 function onMapCanvasClick(evt){
-  if(!ui.managing || !ui.mapMoveArmedId) return;
+  if(!ui.managing) return;
   const svg = evt.currentTarget;
   const rect = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
   const x = Math.round((evt.clientX-rect.left)/rect.width*vb.width + vb.x);
   const y = Math.round((evt.clientY-rect.top)/rect.height*vb.height + vb.y);
-  const id = ui.mapMoveArmedId;
-  updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{...n,x,y}:n)}));
-  ui.mapMoveArmedId=null;
-  saveState(); render();
+  if(ui.mapMoveArmedId){
+    const id = ui.mapMoveArmedId;
+    updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{...n,x,y}:n)}));
+    ui.mapMoveArmedId=null;
+    saveState(); render();
+    return;
+  }
+  if(ui.mapConnectFrom){
+    // tapping empty space cancels an in-progress connection instead of adding a room
+    ui.mapConnectFrom=null; render();
+    return;
+  }
+  addMapNodeAt(x, y);
 }
 function setMarkerHere(nodeId){
   updateCurrentMap(m=>({...m, markerNodeId:nodeId}));
@@ -2741,7 +2787,8 @@ function renderMapTab(){
       <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="addMapNode()">+ Raum</button>
       <button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>
       <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="deleteMap('${cur.id}')">🗑 Karte löschen</button>
-    </div>`;
+    </div>
+    <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen.</p>`;
     if(ui.mapMoveArmedId){
       html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um den Raum dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
     }
@@ -2768,13 +2815,12 @@ function renderMapTab(){
       ${isMarker?`<circle cx="${n.x}" cy="${n.y}" r="${n.r+6}" fill="none" stroke="var(--gold)" stroke-width="3"></circle>`:''}
       <circle cx="${n.x}" cy="${n.y}" r="${n.r}" fill="${isSelected?'var(--gold-dim)':'var(--panel-raised)'}" stroke="${isMoveArmed?'var(--wax)':'var(--border)'}" stroke-width="2"></circle>
       <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.num)}</text>
-      <text x="${n.x}" y="${n.y-n.r-6}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${escapeHtml(n.name)}</text>
     </g>`;
   }).join('');
 
   html += `<div class="panel" style="padding:6px;">
     <div class="map-svg-wrap">
-      <svg viewBox="0 0 ${W} ${H}" onclick="onMapCanvasClick(event)" style="width:100%;height:auto;display:block;">
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" onclick="onMapCanvasClick(event)">
         <defs>
           <marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
@@ -2855,14 +2901,58 @@ function renderMapEdgeModal(){
 // ============================================================
 // Beziehungen (directed relationship / faction web)
 // ============================================================
+// Force-directed layout (nodes repel each other, edges pull their two ends
+// together like springs), seeded from a circle so it's stable and doesn't
+// jump around between renders. No position is stored — this is recomputed
+// every time from the node/edge list, which is why the graph settles into
+// the same layout as long as the underlying data hasn't changed. This is
+// what spaces out connected/unconnected factions instead of leaving every
+// node on a fixed ring regardless of how they relate to each other.
 function getRelationLayout(){
   const active = getActive();
   const list = active.relationNodes;
-  const cx=200, cy=200, R = list.length<=1 ? 0 : 150;
-  return list.map((n,i)=>{
-    const angle = (2*Math.PI*i/list.length) - Math.PI/2;
-    return {...n, x: cx + (list.length>1 ? R*Math.cos(angle) : 0), y: cy + (list.length>1 ? R*Math.sin(angle) : 0)};
+  const n = list.length;
+  if(n===0) return [];
+  const cx=200, cy=200;
+  const pos = list.map((node,i)=>{
+    const angle = (2*Math.PI*i/n) - Math.PI/2;
+    return {x: cx + (n>1 ? 150*Math.cos(angle) : 0), y: cy + (n>1 ? 150*Math.sin(angle) : 0)};
   });
+  if(n>1){
+    const idx = {}; list.forEach((node,i)=>idx[node.id]=i);
+    const edges = active.relationEdges;
+    const REPULSION = 9000, SPRING = 0.02, IDEAL_LEN = 130, CENTER_PULL = 0.01;
+    for(let iter=0; iter<300; iter++){
+      const fx = new Array(n).fill(0), fy = new Array(n).fill(0);
+      for(let i=0;i<n;i++){
+        for(let j=i+1;j<n;j++){
+          let dx = pos[i].x-pos[j].x, dy = pos[i].y-pos[j].y;
+          let d2 = dx*dx+dy*dy; if(d2<1) d2=1;
+          const d = Math.sqrt(d2);
+          const f = REPULSION/d2;
+          fx[i]+=f*dx/d; fy[i]+=f*dy/d;
+          fx[j]-=f*dx/d; fy[j]-=f*dy/d;
+        }
+      }
+      edges.forEach(e=>{
+        const i=idx[e.from], j=idx[e.to];
+        if(i==null||j==null||i===j) return;
+        const dx = pos[j].x-pos[i].x, dy = pos[j].y-pos[i].y;
+        const d = Math.hypot(dx,dy)||1;
+        const f = SPRING*(d-IDEAL_LEN);
+        fx[i]+=f*dx/d; fy[i]+=f*dy/d;
+        fx[j]-=f*dx/d; fy[j]-=f*dy/d;
+      });
+      for(let i=0;i<n;i++){
+        fx[i] += (cx-pos[i].x)*CENTER_PULL;
+        fy[i] += (cy-pos[i].y)*CENTER_PULL;
+        pos[i].x += fx[i]*0.5; pos[i].y += fy[i]*0.5;
+      }
+    }
+    const margin = 55;
+    pos.forEach(p=>{ p.x = Math.max(margin, Math.min(400-margin, p.x)); p.y = Math.max(margin, Math.min(400-margin, p.y)); });
+  }
+  return list.map((node,i)=>({...node, x:pos[i].x, y:pos[i].y}));
 }
 function addRelationNode(){
   const id = uid();
@@ -2989,11 +3079,11 @@ function renderRelationsTab(){
     const end = rectEdgePoint(B.x, B.y, boxB.w/2, boxB.h/2, g.mx, g.my);
     const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
     const lbl = labelById[e.id];
-    return `<g>
-      <path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" marker-end="url(#rel-arrow)"></path>
-      <path d="${d}" fill="none" stroke="transparent" stroke-width="18" style="cursor:pointer;"
+    return `<g style="cursor:pointer;"
         onpointerdown="relationEdgePointerDown(event,'${e.id}')" onpointerup="relationEdgePointerUp()" onpointerleave="relationEdgePointerUp()"
-        onclick="relationEdgeClick(event,'${e.id}')"></path>
+        onclick="relationEdgeClick(event,'${e.id}')">
+      <path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" marker-end="url(#rel-arrow)"></path>
+      <path d="${d}" fill="none" stroke="transparent" stroke-width="18"></path>
       <rect x="${lbl.cx-lbl.w/2}" y="${lbl.cy-lbl.h/2}" width="${lbl.w}" height="${lbl.h}" rx="4" fill="var(--bg)" stroke="var(--border)"></rect>
       <text x="${lbl.cx}" y="${lbl.cy+4}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${escapeHtml(e.label)} ${escapeHtml(e.weight)}</text>
     </g>`;
@@ -3008,7 +3098,7 @@ function renderRelationsTab(){
 
   html += `<div class="panel" style="padding:6px;">
     <div class="map-svg-wrap">
-      <svg viewBox="0 0 400 400" style="width:100%;height:auto;display:block;">
+      <svg viewBox="0 0 400 400" width="400" height="400">
         <defs>
           <marker id="rel-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
