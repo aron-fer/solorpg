@@ -108,8 +108,11 @@
   .pill-scroll { display:flex; align-items:center; gap:8px; overflow-x:auto; padding-bottom:4px; }
   .mode-toggle { display:flex; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
   .mode-toggle button { flex:1; padding:8px 0; font-size:12px; }
-  .map-svg-wrap { max-width:480px; max-height:60vh; overflow:auto; margin:0 auto; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
-  .map-svg-wrap svg { display:block; touch-action:manipulation; }
+  .map-svg-wrap { width:100%; max-width:480px; max-height:60vh; overflow:auto; margin:0 auto; background:var(--bg); border:1px solid var(--border); border-radius:10px; }
+  .map-svg-wrap svg { display:block; touch-action:manipulation; width:100%; height:auto; }
+  @media (min-width: 768px) {
+    .map-svg-wrap { max-width:680px; max-height:70vh; }
+  }
   #file-import { display:none; }
   .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 </style>
@@ -262,6 +265,63 @@ function circleEdgePoint(cx, cy, r, tx, ty){
   const dx=tx-cx, dy=ty-cy;
   const d=Math.hypot(dx,dy)||1;
   return {x:cx+dx/d*r, y:cy+dy/d*r};
+}
+// ---- Dungeon-map grid background (square or pointy-top hex) + snapping ----
+function squareGridSnap(x, y, s){ return {x:Math.round(x/s)*s, y:Math.round(y/s)*s}; }
+function renderSquareGridLines(W, H, s){
+  let out = '';
+  for(let x=0; x<=W; x+=s) out += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--border)" stroke-width="1"></line>`;
+  for(let y=0; y<=H; y+=s) out += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="var(--border)" stroke-width="1"></line>`;
+  return out;
+}
+// Pointy-top hex grid, using axial coordinates (q,r) — see redblobgames.com/grids/hexagons
+// for the reference math. "s" is the hex's circumradius (center to a corner).
+function hexAxialToPixel(q, r, s){
+  return {x: s*(Math.sqrt(3)*q + Math.sqrt(3)/2*r), y: s*(1.5*r)};
+}
+function hexPixelToAxial(x, y, s){
+  return {q: (Math.sqrt(3)/3*x - 1/3*y)/s, r: (2/3*y)/s};
+}
+function hexRound(q, r){
+  let x=q, z=r, y=-x-z;
+  let rx=Math.round(x), ry=Math.round(y), rz=Math.round(z);
+  const xDiff=Math.abs(rx-x), yDiff=Math.abs(ry-y), zDiff=Math.abs(rz-z);
+  if(xDiff>yDiff && xDiff>zDiff) rx=-ry-rz;
+  else if(yDiff>zDiff) ry=-rx-rz;
+  else rz=-rx-ry;
+  return {q:rx, r:rz};
+}
+function hexGridSnap(x, y, s){
+  const {q,r} = hexPixelToAxial(x, y, s);
+  const rounded = hexRound(q, r);
+  const px = hexAxialToPixel(rounded.q, rounded.r, s);
+  return {x:Math.round(px.x), y:Math.round(px.y)};
+}
+function hexCornersPoints(cx, cy, s){
+  const pts = [];
+  for(let i=0;i<6;i++){
+    const angle = Math.PI/180*(60*i-30);
+    pts.push(`${(cx+s*Math.cos(angle)).toFixed(1)},${(cy+s*Math.sin(angle)).toFixed(1)}`);
+  }
+  return pts.join(' ');
+}
+function renderHexGridLines(W, H, s){
+  let out = '';
+  const cols = Math.ceil(W/(Math.sqrt(3)*s))+2;
+  const rows = Math.ceil(H/(1.5*s))+2;
+  for(let r=-1; r<rows; r++){
+    for(let q=-2; q<cols; q++){
+      const {x,y} = hexAxialToPixel(q, r, s);
+      if(x<-s || x>W+s || y<-s || y>H+s) continue;
+      out += `<polygon points="${hexCornersPoints(x,y,s)}" fill="none" stroke="var(--border)" stroke-width="1"></polygon>`;
+    }
+  }
+  return out;
+}
+function snapToMapGrid(map, x, y){
+  if(!map || map.grid==='none') return {x:Math.round(x), y:Math.round(y)};
+  const s = map.gridSize||40;
+  return map.grid==='hex' ? hexGridSnap(x,y,s) : squareGridSnap(x,y,s);
 }
 function renderStatusControl(boxes, onToggle, onReduce, onClear, reduceInputId){
   const tier = (()=>{ for(let i=5;i>=0;i--){ if(boxes[i]) return i+1; } return 0; })();
@@ -469,6 +529,8 @@ function ensureCampaign(data){
   d.maps = (d.maps||[]).map(m=>({
     id: m.id||uid(), name: m.name||'Karte', description: m.description||'',
     markerNodeId: m.markerNodeId||null,
+    grid: (m.grid==='square'||m.grid==='hex') ? m.grid : 'none',
+    gridSize: m.gridSize>0 ? m.gridSize : 40,
     nodes: (m.nodes||[]).map((n,idx)=>({
       id: n.id||uid(), name: n.name||('Raum '+(idx+1)), num: n.num!=null?n.num:(idx+1),
       x: n.x!=null?n.x:(60+(idx%4)*80), y: n.y!=null?n.y:(50+Math.floor(idx/4)*80),
@@ -2625,7 +2687,7 @@ function setActiveMapId(id){
 }
 function addMap(){
   const id = uid();
-  updateActive(camp=>({...camp, maps:[...camp.maps, {id, name:'Karte '+(camp.maps.length+1), description:'', markerNodeId:null, nodes:[], edges:[]}], activeMapId:id}));
+  updateActive(camp=>({...camp, maps:[...camp.maps, {id, name:'Karte '+(camp.maps.length+1), description:'', markerNodeId:null, grid:'square', gridSize:40, nodes:[], edges:[]}], activeMapId:id}));
   saveState(); render();
 }
 function deleteMap(id){
@@ -2648,8 +2710,17 @@ function addMapNodeAt(x, y){
   const cur = getCurrentMap();
   if(!cur) return;
   const idx = cur.nodes.length;
-  const node = {id:uid(), name:'Raum '+(idx+1), num: idx+1, x:Math.round(x), y:Math.round(y), r:16, desc:''};
+  const snapped = snapToMapGrid(cur, x, y);
+  const node = {id:uid(), name:'Raum '+(idx+1), num: idx+1, x:snapped.x, y:snapped.y, r:16, desc:''};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
+  saveState(); render();
+}
+function setMapGridType(type){
+  updateCurrentMap(m=>({...m, grid:type}));
+  saveState(); render();
+}
+function onMapGridSizeInput(el){
+  updateCurrentMap(m=>({...m, gridSize: parseInt(el.value,10)||40}));
   saveState(); render();
 }
 function toggleMapConnectMode(){
@@ -2682,7 +2753,9 @@ function onMapCanvasClick(evt){
   const y = Math.round((evt.clientY-rect.top)/rect.height*vb.height + vb.y);
   if(ui.mapMoveArmedId){
     const id = ui.mapMoveArmedId;
-    updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{...n,x,y}:n)}));
+    const cur = getCurrentMap();
+    const snapped = snapToMapGrid(cur, x, y);
+    updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{...n,x:snapped.x,y:snapped.y}:n)}));
     ui.mapMoveArmedId=null;
     saveState(); render();
     return;
@@ -2788,7 +2861,16 @@ function renderMapTab(){
       <button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>
       <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="deleteMap('${cur.id}')">🗑 Karte löschen</button>
     </div>
-    <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen.</p>`;
+    <div class="row wrap" style="gap:8px;align-items:center;">
+      <span class="small-muted">Raster:</span>
+      <div class="mode-toggle" style="width:auto;">
+        <button style="padding:6px 10px;font-size:12px;${cur.grid==='none'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('none')">Kein Raster</button>
+        <button style="padding:6px 10px;font-size:12px;${cur.grid==='square'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('square')">Quadrate</button>
+        <button style="padding:6px 10px;font-size:12px;${cur.grid==='hex'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('hex')">Hex</button>
+      </div>
+      ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" style="width:100px;">` : ''}
+    </div>
+    <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.</p>`;
     if(ui.mapMoveArmedId){
       html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um den Raum dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
     }
@@ -2796,6 +2878,8 @@ function renderMapTab(){
 
   const W = Math.max(320, 320, ...cur.nodes.map(n=>n.x+n.r+30));
   const H = Math.max(220, 220, ...cur.nodes.map(n=>n.y+n.r+30));
+  const gridSvg = cur.grid==='hex' ? renderHexGridLines(W, H, cur.gridSize)
+    : cur.grid==='square' ? renderSquareGridLines(W, H, cur.gridSize) : '';
   const geoms = curvedEdgeGeometry(cur.nodes, cur.edges, 18);
   const edgesSvg = geoms.map(g=>{
     const A=g.A, B=g.B, e=g.edge;
@@ -2826,6 +2910,7 @@ function renderMapTab(){
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
           </marker>
         </defs>
+        ${gridSvg}
         ${edgesSvg}
         ${nodesSvg}
       </svg>
@@ -2901,58 +2986,107 @@ function renderMapEdgeModal(){
 // ============================================================
 // Beziehungen (directed relationship / faction web)
 // ============================================================
+// Small deterministic PRNG + string hash, used only to seed a handful of
+// different force-layout starting positions below. Deterministic (not
+// Math.random()) so the SAME graph always settles on the SAME layout
+// between renders instead of jittering every time you tap something.
+function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return h>>>0; }
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function segmentsIntersect(p1,p2,p3,p4){
+  function ccw(a,b,c){ return (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x); }
+  const d1=ccw(p3,p4,p1), d2=ccw(p3,p4,p2), d3=ccw(p1,p2,p3), d4=ccw(p1,p2,p4);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+function countEdgeCrossings(pos, idx, edges){
+  let count = 0;
+  for(let i=0;i<edges.length;i++){
+    const a1=idx[edges[i].from], a2=idx[edges[i].to];
+    if(a1==null||a2==null) continue;
+    for(let j=i+1;j<edges.length;j++){
+      const b1=idx[edges[j].from], b2=idx[edges[j].to];
+      if(b1==null||b2==null) continue;
+      if(a1===b1||a1===b2||a2===b1||a2===b2) continue; // sharing a node isn't a "crossing"
+      if(segmentsIntersect(pos[a1],pos[a2],pos[b1],pos[b2])) count++;
+    }
+  }
+  return count;
+}
 // Force-directed layout (nodes repel each other, edges pull their two ends
-// together like springs), seeded from a circle so it's stable and doesn't
-// jump around between renders. No position is stored — this is recomputed
-// every time from the node/edge list, which is why the graph settles into
-// the same layout as long as the underlying data hasn't changed. This is
-// what spaces out connected/unconnected factions instead of leaving every
-// node on a fixed ring regardless of how they relate to each other.
+// together like springs). No position is stored — this is recomputed every
+// time from the node/edge list. Since a spring simulation can settle into
+// different local optima depending on where it starts, this tries a
+// handful of deterministic starting layouts and keeps whichever one ends
+// up with the fewest edges crossing each other, so the graph reads as
+// cleanly as a force layout reasonably can instead of leaving every node on
+// a fixed ring regardless of how they relate to each other.
 function getRelationLayout(){
   const active = getActive();
   const list = active.relationNodes;
   const n = list.length;
   if(n===0) return [];
+  const idx = {}; list.forEach((node,i)=>idx[node.id]=i);
+  const edges = active.relationEdges;
+  const seedBase = hashStr(list.map(node=>node.id).join(',') + '|' + edges.map(e=>e.from+'>'+e.to).join(','));
   const cx=200, cy=200;
-  const pos = list.map((node,i)=>{
-    const angle = (2*Math.PI*i/n) - Math.PI/2;
-    return {x: cx + (n>1 ? 150*Math.cos(angle) : 0), y: cy + (n>1 ? 150*Math.sin(angle) : 0)};
-  });
-  if(n>1){
-    const idx = {}; list.forEach((node,i)=>idx[node.id]=i);
-    const edges = active.relationEdges;
-    const REPULSION = 9000, SPRING = 0.02, IDEAL_LEN = 130, CENTER_PULL = 0.01;
-    for(let iter=0; iter<300; iter++){
-      const fx = new Array(n).fill(0), fy = new Array(n).fill(0);
-      for(let i=0;i<n;i++){
-        for(let j=i+1;j<n;j++){
-          let dx = pos[i].x-pos[j].x, dy = pos[i].y-pos[j].y;
-          let d2 = dx*dx+dy*dy; if(d2<1) d2=1;
-          const d = Math.sqrt(d2);
-          const f = REPULSION/d2;
+
+  function simulate(variant){
+    const rnd = mulberry32((seedBase + variant*7919) >>> 0);
+    const pos = list.map((node,i)=>{
+      const angle = (2*Math.PI*i/n) - Math.PI/2 + (rnd()-0.5)*0.7;
+      const rad = n>1 ? 150*(0.8+rnd()*0.4) : 0;
+      return {x: cx + (n>1 ? rad*Math.cos(angle) : 0), y: cy + (n>1 ? rad*Math.sin(angle) : 0)};
+    });
+    if(n>1){
+      const REPULSION = 9000, SPRING = 0.02, IDEAL_LEN = 130, CENTER_PULL = 0.01;
+      for(let iter=0; iter<300; iter++){
+        const fx = new Array(n).fill(0), fy = new Array(n).fill(0);
+        for(let i=0;i<n;i++){
+          for(let j=i+1;j<n;j++){
+            let dx = pos[i].x-pos[j].x, dy = pos[i].y-pos[j].y;
+            let d2 = dx*dx+dy*dy; if(d2<1) d2=1;
+            const d = Math.sqrt(d2);
+            const f = REPULSION/d2;
+            fx[i]+=f*dx/d; fy[i]+=f*dy/d;
+            fx[j]-=f*dx/d; fy[j]-=f*dy/d;
+          }
+        }
+        edges.forEach(e=>{
+          const i=idx[e.from], j=idx[e.to];
+          if(i==null||j==null||i===j) return;
+          const dx = pos[j].x-pos[i].x, dy = pos[j].y-pos[i].y;
+          const d = Math.hypot(dx,dy)||1;
+          const f = SPRING*(d-IDEAL_LEN);
           fx[i]+=f*dx/d; fy[i]+=f*dy/d;
           fx[j]-=f*dx/d; fy[j]-=f*dy/d;
+        });
+        for(let i=0;i<n;i++){
+          fx[i] += (cx-pos[i].x)*CENTER_PULL;
+          fy[i] += (cy-pos[i].y)*CENTER_PULL;
+          pos[i].x += fx[i]*0.5; pos[i].y += fy[i]*0.5;
         }
       }
-      edges.forEach(e=>{
-        const i=idx[e.from], j=idx[e.to];
-        if(i==null||j==null||i===j) return;
-        const dx = pos[j].x-pos[i].x, dy = pos[j].y-pos[i].y;
-        const d = Math.hypot(dx,dy)||1;
-        const f = SPRING*(d-IDEAL_LEN);
-        fx[i]+=f*dx/d; fy[i]+=f*dy/d;
-        fx[j]-=f*dx/d; fy[j]-=f*dy/d;
-      });
-      for(let i=0;i<n;i++){
-        fx[i] += (cx-pos[i].x)*CENTER_PULL;
-        fy[i] += (cy-pos[i].y)*CENTER_PULL;
-        pos[i].x += fx[i]*0.5; pos[i].y += fy[i]*0.5;
-      }
+      const margin = 55;
+      pos.forEach(p=>{ p.x = Math.max(margin, Math.min(400-margin, p.x)); p.y = Math.max(margin, Math.min(400-margin, p.y)); });
     }
-    const margin = 55;
-    pos.forEach(p=>{ p.x = Math.max(margin, Math.min(400-margin, p.x)); p.y = Math.max(margin, Math.min(400-margin, p.y)); });
+    return pos;
   }
-  return list.map((node,i)=>({...node, x:pos[i].x, y:pos[i].y}));
+
+  let best = null, bestScore = Infinity;
+  const variants = (n>2 && edges.length>0) ? 6 : 1;
+  for(let v=0; v<variants; v++){
+    const pos = simulate(v);
+    const crossings = countEdgeCrossings(pos, idx, edges);
+    if(crossings < bestScore){ bestScore = crossings; best = pos; }
+    if(bestScore===0) break;
+  }
+  return list.map((node,i)=>({...node, x:best[i].x, y:best[i].y}));
 }
 function addRelationNode(){
   const id = uid();
