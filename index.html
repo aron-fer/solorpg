@@ -318,6 +318,9 @@ function renderHexGridLines(W, H, s){
   }
   return out;
 }
+// The inradius (center-to-edge-midpoint) of a hex with circumradius s — used
+// to clip lines to a hex node without overshooting past its flat sides.
+function hexApothem(s){ return s*Math.sqrt(3)/2; }
 function snapToMapGrid(map, x, y){
   if(!map || map.grid==='none') return {x:Math.round(x), y:Math.round(y)};
   const s = map.gridSize||40;
@@ -2876,28 +2879,71 @@ function renderMapTab(){
     }
   }
 
-  const W = Math.max(320, 320, ...cur.nodes.map(n=>n.x+n.r+30));
-  const H = Math.max(220, 220, ...cur.nodes.map(n=>n.y+n.r+30));
-  const gridSvg = cur.grid==='hex' ? renderHexGridLines(W, H, cur.gridSize)
+  const hexMode = cur.grid==='hex';
+  // In hex mode every room is a fixed-size hex that exactly fills one grid
+  // cell (no per-room resizing there — that's the trade-off for rooms that
+  // always tile cleanly with the grid).
+  const nodeR = n => hexMode ? cur.gridSize : n.r;
+  const W = Math.max(320, 320, ...cur.nodes.map(n=>n.x+nodeR(n)+30));
+  const H = Math.max(220, 220, ...cur.nodes.map(n=>n.y+nodeR(n)+30));
+  const gridSvg = hexMode ? renderHexGridLines(W, H, cur.gridSize)
     : cur.grid==='square' ? renderSquareGridLines(W, H, cur.gridSize) : '';
   const geoms = curvedEdgeGeometry(cur.nodes, cur.edges, 18);
-  const edgesSvg = geoms.map(g=>{
+  // Split into an (invisible, clickable) hit-test layer that stays BELOW the
+  // nodes — so tapping a node always wins over tapping a nearby edge — and
+  // the actual visible line, drawn AFTER the nodes so hex-filled rooms that
+  // sit right next to each other don't swallow the connector between them.
+  // Precompute each edge's clipped endpoints once, since touching hex cells
+  // (the normal case for hex-neighbor rooms) leave zero line length between
+  // them — both the hit-test layer and the visible layer need to fall back
+  // to a small doorway marker at the shared wall in that case.
+  const edgeGeoms = geoms.map(g=>{
     const A=g.A, B=g.B, e=g.edge;
-    const start = circleEdgePoint(A.x, A.y, A.r, g.mx, g.my);
-    const end = circleEdgePoint(B.x, B.y, B.r, g.mx, g.my);
+    const rA = hexMode ? hexApothem(cur.gridSize) : A.r;
+    const rB = hexMode ? hexApothem(cur.gridSize) : B.r;
+    const start = circleEdgePoint(A.x, A.y, rA, g.mx, g.my);
+    const end = circleEdgePoint(B.x, B.y, rB, g.mx, g.my);
+    const segLen = Math.hypot(end.x-start.x, end.y-start.y);
+    return {g, e, start, end, segLen};
+  });
+  const edgeHitSvg = ui.managing ? edgeGeoms.map(({e,start,end,segLen,g})=>{
+    if(segLen<12){
+      const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
+      return `<circle cx="${midx}" cy="${midy}" r="10" fill="transparent" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></circle>`;
+    }
     const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
+    return `<path d="${d}" fill="none" stroke="transparent" stroke-width="16" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></path>`;
+  }).join('') : '';
+  const edgesSvg = edgeGeoms.map(({g,e,start,end,segLen})=>{
     const dashed = e.type==='secret' ? 'stroke-dasharray="5,5"' : '';
+    if(segLen<12){
+      // Adjacent hex rooms already share a wall — mark the connection right
+      // on that shared edge instead of drawing a (now zero-length) line.
+      const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
+      const angle = Math.atan2(g.B.y-g.A.y, g.B.x-g.A.x)*180/Math.PI;
+      const secretRing = e.type==='secret' ? `<circle cx="${midx}" cy="${midy}" r="7" fill="none" stroke="var(--gold-dim)" stroke-width="1.5" stroke-dasharray="3,2"></circle>` : '';
+      const mark = e.oneway
+        ? `<g transform="translate(${midx},${midy}) rotate(${angle})"><path d="M -4,-5 L 5,0 L -4,5 z" fill="var(--gold-dim)"></path></g>`
+        : `<circle cx="${midx}" cy="${midy}" r="4" fill="var(--gold-dim)"></circle>`;
+      return `<g style="pointer-events:none;">${secretRing}${mark}</g>`;
+    }
+    const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
     const marker = e.oneway ? 'marker-end="url(#map-arrow)"' : '';
-    const hitPath = ui.managing ? `<path d="${d}" fill="none" stroke="transparent" stroke-width="16" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></path>` : '';
-    return `<path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" ${dashed} ${marker}></path>${hitPath}`;
+    return `<path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" ${dashed} ${marker} style="pointer-events:none;"></path>`;
   }).join('');
   const nodesSvg = cur.nodes.map(n=>{
     const isMarker = cur.markerNodeId===n.id;
     const isSelected = ui.selectedMapNodeId===n.id;
     const isMoveArmed = ui.mapMoveArmedId===n.id;
+    const r = nodeR(n);
+    const fill = isSelected?'var(--gold-dim)':'var(--panel-raised)';
+    const stroke = isMoveArmed?'var(--wax)':'var(--border)';
+    const shape = hexMode
+      ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="${fill}" stroke="${stroke}" stroke-width="2"></polygon>`
+      : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"></circle>`;
     return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">
-      ${isMarker?`<circle cx="${n.x}" cy="${n.y}" r="${n.r+6}" fill="none" stroke="var(--gold)" stroke-width="3"></circle>`:''}
-      <circle cx="${n.x}" cy="${n.y}" r="${n.r}" fill="${isSelected?'var(--gold-dim)':'var(--panel-raised)'}" stroke="${isMoveArmed?'var(--wax)':'var(--border)'}" stroke-width="2"></circle>
+      ${isMarker?`<circle cx="${n.x}" cy="${n.y}" r="${r+6}" fill="none" stroke="var(--gold)" stroke-width="3"></circle>`:''}
+      ${shape}
       <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.num)}</text>
     </g>`;
   }).join('');
@@ -2911,8 +2957,9 @@ function renderMapTab(){
           </marker>
         </defs>
         ${gridSvg}
-        ${edgesSvg}
         ${nodesSvg}
+        ${edgesSvg}
+        ${edgeHitSvg}
       </svg>
     </div>
   </div>`;
@@ -2936,6 +2983,8 @@ function renderMapTab(){
 }
 function renderMapNodeModal(){
   const d = ui.mapNodeDraft, id = ui.editingMapNodeId;
+  const cur = getCurrentMap();
+  const hexMode = cur && cur.grid==='hex';
   return `<div class="modal-overlay"><div class="modal-sheet">
     <div class="row between"><span class="label" style="color:var(--gold);">Raum bearbeiten</span>
       <button class="icon-btn" onclick="cancelMapNodeModal()">✕</button></div>
@@ -2944,11 +2993,12 @@ function renderMapNodeModal(){
       <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="Name des Raums" style="flex:1;">
     </div>
     <textarea rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
+    ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jeder Raum immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
     <div class="row between">
       <span class="small-muted">Größe</span>
       <span class="small-muted" id="mapNodeRVal">${d.r}</span>
     </div>
-    <input type="range" min="10" max="40" value="${d.r}" oninput="ui.mapNodeDraft.r=this.value; document.getElementById('mapNodeRVal').textContent=this.value;">
+    <input type="range" min="10" max="40" value="${d.r}" oninput="ui.mapNodeDraft.r=this.value; document.getElementById('mapNodeRVal').textContent=this.value;">`}
     <div class="row wrap" style="gap:8px;">
       <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelMapNodeModal(); armMoveMapNode('${id}')">↔ Verschieben</button>
       <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelMapNodeModal(); setMarkerHere('${id}')">📍 Marker hierher</button>
