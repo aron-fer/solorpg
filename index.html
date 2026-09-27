@@ -535,7 +535,7 @@ function ensureCampaign(data){
     grid: (m.grid==='square'||m.grid==='hex') ? m.grid : 'none',
     gridSize: m.gridSize>0 ? m.gridSize : 40,
     nodes: (m.nodes||[]).map((n,idx)=>({
-      id: n.id||uid(), name: n.name||('Raum '+(idx+1)), num: n.num!=null?n.num:(idx+1),
+      id: n.id||uid(), name: n.name||('Raum '+(idx+1)), num: n.num!=null?String(n.num):String(idx+1),
       x: n.x!=null?n.x:(60+(idx%4)*80), y: n.y!=null?n.y:(50+Math.floor(idx/4)*80),
       r: n.r!=null?n.r:16, desc: n.desc||'',
     })),
@@ -597,6 +597,7 @@ let ui = {
   activeTab:'notes', managing:false, confirmClear:{oracle:false, battle:false},
   formulaOracle:'', formulaBattle:'',
   editingTableId:null, tableDraft:null,
+  tableSelectMode:false, selectedTableIds:[], confirmBulkDeleteTables:false, bulkGroupChoice:'', bulkGroupNewName:'',
   editingComboId:null, comboDraft:null,
   editingKarteiEntry:null, karteiEntryDraft:null,
   editingKarteiId:null, karteiNameDraft:'',
@@ -915,6 +916,42 @@ function moveGroup(name, dir){
     [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
     return {...camp, groupOrder:order};
   });
+  saveState(); render();
+}
+function toggleTableSelectMode(){
+  ui.tableSelectMode = !ui.tableSelectMode;
+  if(!ui.tableSelectMode){ ui.selectedTableIds=[]; ui.confirmBulkDeleteTables=false; }
+  render();
+}
+function toggleTableSelected(id){
+  const i = ui.selectedTableIds.indexOf(id);
+  if(i>=0) ui.selectedTableIds.splice(i,1); else ui.selectedTableIds.push(id);
+  render();
+}
+function confirmDeleteSelectedTables(){ ui.confirmBulkDeleteTables=true; render(); }
+function cancelDeleteSelectedTables(){ ui.confirmBulkDeleteTables=false; render(); }
+function deleteSelectedTables(){
+  const ids = new Set(ui.selectedTableIds);
+  updateActive(camp=>({
+    ...camp,
+    tables: camp.tables.filter(t=>!ids.has(t.id)),
+    combos: camp.combos.map(c=>({...c, tableIds:c.tableIds.filter(tid=>!ids.has(tid))})),
+  }));
+  ui.selectedTableIds=[]; ui.confirmBulkDeleteTables=false; ui.tableSelectMode=false;
+  saveState(); render();
+}
+function onBulkGroupSelect(el){ ui.bulkGroupChoice = el.value; render(); }
+function onBulkGroupNewInput(el){ ui.bulkGroupNewName = el.value; }
+function applyBulkGroup(){
+  const ids = new Set(ui.selectedTableIds);
+  const group = ui.bulkGroupChoice==='__new__' ? (ui.bulkGroupNewName||'').trim() : (ui.bulkGroupChoice||'');
+  updateActive(camp=>{
+    const tables = camp.tables.map(t=> ids.has(t.id) ? {...t, group} : t);
+    const groupOrder = [...camp.groupOrder];
+    if(group && !groupOrder.includes(group)) groupOrder.push(group);
+    return {...camp, tables, groupOrder};
+  });
+  ui.selectedTableIds=[]; ui.tableSelectMode=false; ui.bulkGroupChoice=''; ui.bulkGroupNewName='';
   saveState(); render();
 }
 function startImport(){ ui.importText=''; ui.showImport=true; render(); }
@@ -1696,7 +1733,11 @@ function togglePinTab(id){
   });
   saveState(); render();
 }
-function toggleManaging(){ ui.managing=!ui.managing; render(); }
+function toggleManaging(){
+  ui.managing=!ui.managing;
+  if(!ui.managing){ ui.tableSelectMode=false; ui.selectedTableIds=[]; ui.confirmBulkDeleteTables=false; }
+  render();
+}
 
 function renderHeader(){
   const active = getActive();
@@ -1944,6 +1985,7 @@ function renderDiceTab(){
 
   html += `<div class="panel"><div class="row between"><span class="label">Tabellen</span>
     ${ui.managing ? `<div class="row" style="gap:6px;">
+      <button class="btn ${ui.tableSelectMode?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleTableSelectMode()">${ui.tableSelectMode?'✕ Auswahl beenden':'☑ Auswählen'}</button>
       <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="startImport()">Import</button>
       <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="startNewTable()">+ Neu</button>
     </div>` : ''}</div>`;
@@ -1951,15 +1993,39 @@ function renderDiceTab(){
     html += `<div class="empty"><span>Noch keine Tabellen angelegt.</span>
       <button class="btn btn-raised" onclick="startNewTable()">+ Erste Tabelle anlegen</button></div>`;
   } else {
-    const renderTableRow = (t, idxInGroup, groupLen) => `
+    if(ui.tableSelectMode && ui.selectedTableIds.length>0){
+      html += `<div class="panel" style="background:var(--panel-raised);gap:8px;">
+        <span class="small-muted">${ui.selectedTableIds.length} ausgewählt</span>
+        <div class="row wrap" style="gap:8px;align-items:center;">
+          <select onchange="onBulkGroupSelect(this)" style="flex:1;">
+            <option value="" ${!ui.bulkGroupChoice?'selected':''}>Gruppe entfernen</option>
+            ${active.groupOrder.map(g=>`<option value="${escapeHtml(g)}" ${ui.bulkGroupChoice===g?'selected':''}>${escapeHtml(g)}</option>`).join('')}
+            <option value="__new__" ${ui.bulkGroupChoice==='__new__'?'selected':''}>+ Neue Gruppe…</option>
+          </select>
+          ${ui.bulkGroupChoice==='__new__' ? `<input type="text" placeholder="Name der neuen Gruppe" value="${escapeHtml(ui.bulkGroupNewName||'')}" oninput="onBulkGroupNewInput(this)" style="flex:1;">` : ''}
+          <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="applyBulkGroup()">→ Verschieben</button>
+        </div>
+        <div class="row" style="gap:8px;">
+          ${ui.confirmBulkDeleteTables ? `
+            <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteSelectedTables()">Wirklich löschen (${ui.selectedTableIds.length})</button>
+            <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteSelectedTables()">Abbrechen</button>
+          ` : `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="confirmDeleteSelectedTables()">🗑 Ausgewählte löschen</button>`}
+        </div>
+      </div>`;
+    }
+    const renderTableRow = (t, idxInGroup, groupLen) => {
+      const selected = ui.selectedTableIds.includes(t.id);
+      return `
       <div class="row" style="gap:8px;">
-        <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;" onclick="handleRollTable('${t.id}')">
+        ${ui.tableSelectMode ? `<input type="checkbox" ${selected?'checked':''} onchange="toggleTableSelected('${t.id}')" style="width:20px;height:20px;flex-shrink:0;">` : ''}
+        <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;${selected?'border-color:var(--gold);background:var(--gold-dim);':''}" onclick="${ui.tableSelectMode?`toggleTableSelected('${t.id}')`:`handleRollTable('${t.id}')`}">
           <span>${escapeHtml(t.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${t.mode==='aspects' ? `${(t.aspects||[]).length} Aspekte` : `${t.entries.length} Einträge`}</span>
         </button>
-        ${ui.managing ? `<button class="icon-btn raised" style="${idxInGroup===0?'opacity:0.3;':''}" ${idxInGroup===0?'disabled':''} onclick="moveTable('${t.id}',-1)">↑</button>
+        ${(ui.managing && !ui.tableSelectMode) ? `<button class="icon-btn raised" style="${idxInGroup===0?'opacity:0.3;':''}" ${idxInGroup===0?'disabled':''} onclick="moveTable('${t.id}',-1)">↑</button>
         <button class="icon-btn raised" style="${idxInGroup===groupLen-1?'opacity:0.3;':''}" ${idxInGroup===groupLen-1?'disabled':''} onclick="moveTable('${t.id}',1)">↓</button>
         <button class="icon-btn raised" onclick="startEditTable('${t.id}')">✎</button>` : ''}
       </div>`;
+    };
     const ungrouped = active.tables.filter(t=>!t.group);
     const groupNames = active.groupOrder.filter(g=>active.tables.some(t=>t.group===g));
     html += ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
@@ -2703,6 +2769,14 @@ function deleteMap(id){
 }
 function onMapNameInput(el){ updateCurrentMap(m=>({...m, name:el.value})); saveState(); }
 function onMapDescInput(el){ updateCurrentMap(m=>({...m, description:el.value})); saveState(); }
+function onSelectedMapNodeNameInput(id, el){
+  updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{...n, name:el.value}:n)}));
+  saveState();
+}
+function onSelectedMapNodeDescInput(id, el){
+  updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{...n, desc:el.value}:n)}));
+  saveState();
+}
 function addMapNode(){
   const cur = getCurrentMap();
   if(!cur) return;
@@ -2714,7 +2788,7 @@ function addMapNodeAt(x, y){
   if(!cur) return;
   const idx = cur.nodes.length;
   const snapped = snapToMapGrid(cur, x, y);
-  const node = {id:uid(), name:'Raum '+(idx+1), num: idx+1, x:snapped.x, y:snapped.y, r:16, desc:''};
+  const node = {id:uid(), name:'Raum '+(idx+1), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:''};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
   saveState(); render();
 }
@@ -2723,7 +2797,33 @@ function setMapGridType(type){
   saveState(); render();
 }
 function onMapGridSizeInput(el){
-  updateCurrentMap(m=>({...m, gridSize: parseInt(el.value,10)||40}));
+  const newSize = parseInt(el.value,10)||40;
+  updateCurrentMap(m=>{
+    const oldSize = m.gridSize||40;
+    if(oldSize===newSize) return m;
+    const scale = newSize/oldSize;
+    let nodes;
+    if(m.grid==='hex'){
+      // Reproject each room's axial hex coordinate at the new cell size, so
+      // rooms keep their relative position on the (resized) hex grid instead
+      // of drifting off it.
+      nodes = m.nodes.map(n=>{
+        const {q,r} = hexPixelToAxial(n.x, n.y, oldSize);
+        const rounded = hexRound(q, r);
+        const px = hexAxialToPixel(rounded.q, rounded.r, newSize);
+        return {...n, x:Math.round(px.x), y:Math.round(px.y)};
+      });
+    } else {
+      // Scale every room's position from the grid origin by the same factor
+      // the grid itself just scaled by, then re-snap onto the resized grid.
+      nodes = m.nodes.map(n=>{
+        const scaledMap = {grid:m.grid, gridSize:newSize};
+        const snapped = snapToMapGrid(scaledMap, n.x*scale, n.y*scale);
+        return {...n, x:snapped.x, y:snapped.y};
+      });
+    }
+    return {...m, gridSize:newSize, nodes};
+  });
   saveState(); render();
 }
 function toggleMapConnectMode(){
@@ -2788,7 +2888,7 @@ function saveMapNode(){
   updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id?{
     ...n,
     name: d.name.trim() || n.name,
-    num: d.num!==''&&d.num!=null ? (parseInt(d.num,10)||n.num) : n.num,
+    num: (d.num!=null && String(d.num).trim()!=='') ? String(d.num).trim() : n.num,
     desc: d.desc,
     r: Math.max(10, Math.min(40, parseInt(d.r,10)||n.r)),
   }:n)}));
@@ -2941,16 +3041,32 @@ function renderMapTab(){
     const shape = hexMode
       ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="${fill}" stroke="${stroke}" stroke-width="2"></polygon>`
       : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"></circle>`;
+    // Player-position marker: a small flag/pin above the room instead of a
+    // ring around it, so it doesn't compete visually with the room's own
+    // selection highlight and reads the same for circular and hex rooms.
+    let pinMarker = '';
+    if(isMarker){
+      const topR = hexMode ? hexApothem(cur.gridSize) : r;
+      const bulbR = 6.5, tailLen = 9, gap = 3;
+      const tipY = n.y - topR - gap;
+      const bulbCy = tipY - tailLen;
+      pinMarker = `<g style="pointer-events:none;">
+        <polygon points="${n.x-3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x+3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x},${tipY}" fill="var(--gold)"></polygon>
+        <circle cx="${n.x}" cy="${bulbCy}" r="${bulbR}" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.4"></circle>
+        <circle cx="${n.x}" cy="${bulbCy}" r="2.6" fill="var(--bg)"></circle>
+      </g>`;
+    }
     return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">
-      ${isMarker?`<circle cx="${n.x}" cy="${n.y}" r="${r+6}" fill="none" stroke="var(--gold)" stroke-width="3"></circle>`:''}
       ${shape}
       <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.num)}</text>
+      ${pinMarker}
     </g>`;
   }).join('');
 
+  const topMargin = 30;
   html += `<div class="panel" style="padding:6px;">
     <div class="map-svg-wrap">
-      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" onclick="onMapCanvasClick(event)">
+      <svg viewBox="0 ${-topMargin} ${W} ${H+topMargin}" width="${W}" height="${H+topMargin}" onclick="onMapCanvasClick(event)">
         <defs>
           <marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
@@ -2971,10 +3087,27 @@ function renderMapTab(){
   if(!ui.managing && ui.selectedMapNodeId){
     const n = cur.nodes.find(x=>x.id===ui.selectedMapNodeId);
     if(n){
-      html += `<div class="panel">
-        <div class="row between"><span class="label" style="color:var(--gold);">Raum ${escapeHtml(n.num)} · ${escapeHtml(n.name)}</span>
-          <button class="icon-btn" onclick="selectMapNode('${n.id}')">✕</button></div>
-        <p style="font-size:14px;white-space:pre-line;margin:0;">${n.desc?escapeHtml(n.desc):'<span class="small-muted">(keine Beschreibung)</span>'}</p>
+      const connectedEdges = cur.edges.filter(e=>e.from===n.id || e.to===n.id).map(e=>{
+        const otherId = e.from===n.id ? e.to : e.from;
+        const other = cur.nodes.find(x=>x.id===otherId);
+        const dirLabel = e.oneway ? (e.from===n.id ? '→' : '←') : '↔';
+        const typeLabel = e.type==='secret' ? '🔒 ' : '';
+        return `<div class="row between" style="gap:8px;">
+          <span style="font-size:13px;">${typeLabel}${dirLabel} ${escapeHtml(other?(other.num+' · '+other.name):'?')}</span>
+          <button class="icon-btn" onclick="deleteMapEdge('${e.id}')">🗑</button>
+        </div>`;
+      }).join('');
+      html += `<div class="panel" style="gap:8px;">
+        <div class="row between" style="gap:8px;">
+          <span class="small-muted">Raum ${escapeHtml(n.num)}</span>
+          <button class="icon-btn" onclick="selectMapNode('${n.id}')">✕</button>
+        </div>
+        <input type="text" value="${escapeHtml(n.name)}" oninput="onSelectedMapNodeNameInput('${n.id}',this)" onblur="render()" placeholder="Name des Raums" style="font-weight:600;color:var(--gold);">
+        <textarea rows="3" placeholder="Beschreibung, Fallen, Inhalt…" oninput="onSelectedMapNodeDescInput('${n.id}',this)" onblur="render()">${escapeHtml(n.desc)}</textarea>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <span class="small-muted">Verbindungen</span>
+          ${connectedEdges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
+        </div>
         <button class="btn btn-gold" onclick="setMarkerHere('${n.id}')">📍 Marker hierher</button>
       </div>`;
     }
@@ -2989,7 +3122,7 @@ function renderMapNodeModal(){
     <div class="row between"><span class="label" style="color:var(--gold);">Raum bearbeiten</span>
       <button class="icon-btn" onclick="cancelMapNodeModal()">✕</button></div>
     <div class="row" style="gap:8px;">
-      <input type="number" value="${escapeHtml(d.num)}" oninput="ui.mapNodeDraft.num=this.value;" style="width:72px;" placeholder="Nr.">
+      <input type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(d.num)}" oninput="ui.mapNodeDraft.num=this.value;" style="width:72px;" placeholder="Nr.">
       <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="Name des Raums" style="flex:1;">
     </div>
     <textarea rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
@@ -3256,27 +3389,40 @@ function renderRelationsTab(){
   resolveLabelOverlaps(labelGeoms, 8);
   const labelById = {}; labelGeoms.forEach(l=>labelById[l.edgeId]=l);
 
-  const edgesSvg = geoms.map(g=>{
+  // Same z-order fix as the Map tab: precompute each edge's clipped endpoints
+  // once, then draw nodes BEFORE the edges so opaque node rectangles never
+  // cover the connecting lines/labels, and keep a separate interactive
+  // hit-layer (invisible line + label rect) drawn LAST/topmost so lines and
+  // labels stay clickable without needing to sit under the nodes.
+  const edgeGeoms = geoms.map(g=>{
     const A=g.A, B=g.B, e=g.edge;
     const boxA = nodeBoxes[A.id], boxB = nodeBoxes[B.id];
     const start = rectEdgePoint(A.x, A.y, boxA.w/2, boxA.h/2, g.mx, g.my);
     const end = rectEdgePoint(B.x, B.y, boxB.w/2, boxB.h/2, g.mx, g.my);
-    const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
-    const lbl = labelById[e.id];
-    return `<g style="cursor:pointer;"
-        onpointerdown="relationEdgePointerDown(event,'${e.id}')" onpointerup="relationEdgePointerUp()" onpointerleave="relationEdgePointerUp()"
-        onclick="relationEdgeClick(event,'${e.id}')">
-      <path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" marker-end="url(#rel-arrow)"></path>
-      <path d="${d}" fill="none" stroke="transparent" stroke-width="18"></path>
-      <rect x="${lbl.cx-lbl.w/2}" y="${lbl.cy-lbl.h/2}" width="${lbl.w}" height="${lbl.h}" rx="4" fill="var(--bg)" stroke="var(--border)"></rect>
-      <text x="${lbl.cx}" y="${lbl.cy+4}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${escapeHtml(e.label)} ${escapeHtml(e.weight)}</text>
-    </g>`;
-  }).join('');
+    return {g, e, start, end, lbl: labelById[e.id]};
+  });
   const nodesSvg = nodes.map(n=>{
     const box = nodeBoxes[n.id];
     return `<g onclick="event.stopPropagation(); selectRelationNode('${n.id}')" style="cursor:pointer;">
       <rect x="${n.x-box.w/2}" y="${n.y-box.h/2}" width="${box.w}" height="${box.h}" rx="6" fill="var(--panel-raised)" stroke="var(--gold-dim)" stroke-width="2"></rect>
       <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.name)}</text>
+    </g>`;
+  }).join('');
+  const edgesSvg = edgeGeoms.map(({g,e,start,end,lbl})=>{
+    const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
+    return `<g style="pointer-events:none;">
+      <path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" marker-end="url(#rel-arrow)"></path>
+      <rect x="${lbl.cx-lbl.w/2}" y="${lbl.cy-lbl.h/2}" width="${lbl.w}" height="${lbl.h}" rx="4" fill="var(--bg)" stroke="var(--border)"></rect>
+      <text x="${lbl.cx}" y="${lbl.cy+4}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${escapeHtml(e.label)} ${escapeHtml(e.weight)}</text>
+    </g>`;
+  }).join('');
+  const edgeHitSvg = edgeGeoms.map(({g,e,start,end,lbl})=>{
+    const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
+    return `<g style="cursor:pointer;"
+        onpointerdown="relationEdgePointerDown(event,'${e.id}')" onpointerup="relationEdgePointerUp()" onpointerleave="relationEdgePointerUp()"
+        onclick="relationEdgeClick(event,'${e.id}')">
+      <path d="${d}" fill="none" stroke="transparent" stroke-width="18"></path>
+      <rect x="${lbl.cx-lbl.w/2}" y="${lbl.cy-lbl.h/2}" width="${lbl.w}" height="${lbl.h}" fill="transparent"></rect>
     </g>`;
   }).join('');
 
@@ -3288,8 +3434,9 @@ function renderRelationsTab(){
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
           </marker>
         </defs>
-        ${edgesSvg}
         ${nodesSvg}
+        ${edgesSvg}
+        ${edgeHitSvg}
       </svg>
     </div>
   </div>`;
