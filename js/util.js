@@ -1,0 +1,341 @@
+// Tab constants, generic helpers, SVG/graph + grid math, JSON import parsing.
+const SPECIAL_TABS = {
+  notes: {defaultLabel:'Text', defaultIcon:'📜'},
+  dice: {defaultLabel:'Orakel', defaultIcon:'🎲'},
+  character: {defaultLabel:'Charakter', defaultIcon:'🧙'},
+  map: {defaultLabel:'Karte', defaultIcon:'🗺️'},
+  relations: {defaultLabel:'Beziehungen', defaultIcon:'🕸️'},
+  battle: {defaultLabel:'Kampf', defaultIcon:'⚔️'},
+};
+function getAllTabs(){
+  const active = getActive();
+  const karteiMap = {};
+  active.karteien.forEach(k=>karteiMap[k.id]=k);
+  return active.tabOrder.map(id=>{
+    if(SPECIAL_TABS[id]){
+      const ov = (active.tabOverrides||{})[id] || {};
+      const label = ov.label && ov.label.trim() ? ov.label : SPECIAL_TABS[id].defaultLabel;
+      const icon = ov.icon && ov.icon.trim() ? ov.icon : SPECIAL_TABS[id].defaultIcon;
+      return {id, label, icon, special:true};
+    }
+    const k = karteiMap[id];
+    if(k) return {id, label:k.name, icon:k.icon||'📇', special:false};
+    return null;
+  }).filter(Boolean);
+}
+
+const FIELD_TYPES = [
+  {id:'number', label:'Zahl (fest)'},
+  {id:'counter', label:'Zahl (+/-)'},
+  {id:'text', label:'Freitext'},
+  {id:'list', label:'Liste'},
+  {id:'status', label:'Status (6 Kästchen)'},
+  {id:'table', label:'Tabelle (Spalten)'},
+];
+
+const STORAGE_KEY = 'solorpg-data';
+const LEGACY_STORAGE_KEY = 'losbuch-data';
+
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function rollDie(sides){ return Math.floor(Math.random()*sides)+1; }
+function parseFormula(raw){
+  const m = raw.trim().match(/^(\d*)[dw](\d+)\s*([+-]\s*\d+)?$/i);
+  if(!m) return null;
+  const count = m[1] ? parseInt(m[1],10) : 1;
+  const sides = parseInt(m[2],10);
+  const mod = m[3] ? parseInt(m[3].replace(/\s/g,''),10) : 0;
+  if(count<1||count>100||sides<2) return null;
+  return {count,sides,mod};
+}
+function timeNow(){
+  const d = new Date();
+  return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+}
+function defaultValueForType(type){
+  if(type==='list') return [];
+  if(type==='text') return '';
+  if(type==='status') return [false,false,false,false,false,false];
+  if(type==='table') return {columns:['Spalte 1','Spalte 2'], rows:[]};
+  return '0';
+}
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// --- Shared graph/SVG helpers (used by Karte and Beziehungen) ---
+function pairKey(a,b){ return [a,b].sort().join('|'); }
+function labelBoxWidth(text){ return Math.max(30, String(text).length*5.6+12); }
+function nodeBoxWidth(text){ return Math.max(60, String(text).length*6.2+16); }
+// Ray from node center toward (tx,ty), clipped to the node's rectangle boundary.
+function rectEdgePoint(cx, cy, halfw, halfh, tx, ty){
+  const dx = tx-cx, dy = ty-cy;
+  if(dx===0 && dy===0) return {x:cx, y:cy};
+  const sx = dx!==0 ? halfw/Math.abs(dx) : Infinity;
+  const sy = dy!==0 ? halfh/Math.abs(dy) : Infinity;
+  const s = Math.min(sx, sy, 1);
+  return {x:cx+dx*s, y:cy+dy*s};
+}
+// For a pair of nodes with >1 edge between them, curve bend must use the SAME
+// sign for both directions of travel (the perpendicular flips automatically
+// when source/target reverse) — using opposite signs makes them overlap.
+function curveBend(fromId, toId, pairCount, magnitude){
+  return pairCount>1 ? magnitude : 0;
+}
+// Pushes apart any two label boxes (by center + size) that overlap, so labels
+// from unrelated edges never sit on top of each other. Mutates geoms in place.
+function resolveLabelOverlaps(geoms, iterations){
+  for(let it=0; it<(iterations||8); it++){
+    let moved = false;
+    for(let i=0;i<geoms.length;i++){
+      for(let j=i+1;j<geoms.length;j++){
+        const A=geoms[i], B=geoms[j];
+        const ax1=A.cx-A.w/2, ax2=A.cx+A.w/2, ay1=A.cy-A.h/2, ay2=A.cy+A.h/2;
+        const bx1=B.cx-B.w/2, bx2=B.cx+B.w/2, by1=B.cy-B.h/2, by2=B.cy+B.h/2;
+        const overlapX = Math.min(ax2,bx2) - Math.max(ax1,bx1);
+        const overlapY = Math.min(ay2,by2) - Math.max(ay1,by1);
+        if(overlapX>0 && overlapY>0){
+          moved = true;
+          const dx = B.cx-A.cx, dy = B.cy-A.cy;
+          const dist = Math.hypot(dx,dy) || 0.01;
+          const push = Math.min(overlapX, overlapY)/2 + 3;
+          const ux = dx/dist, uy = dy/dist;
+          A.cx -= ux*push; A.cy -= uy*push;
+          B.cx += ux*push; B.cy += uy*push;
+        }
+      }
+    }
+    if(!moved) break;
+  }
+}
+// Given a set of {id,x,y} nodes and {from,to} edges, computes a quadratic-
+// bezier control point per edge. When two nodes share more than one edge
+// (bidirectional relationships, a two-way map connection drawn as two one-
+// way ones, etc.) the perpendicular axis is taken from a CANONICAL (sorted)
+// node-id pair rather than each edge's own from->to direction — otherwise
+// the offset's sign flips when direction reverses and both edges land back
+// on top of each other. Edges to/from a missing node are dropped.
+function curvedEdgeGeometry(nodes, edges, magnitude){
+  const byId = {}; nodes.forEach(n=>byId[n.id]=n);
+  const pairCounts = {};
+  edges.forEach(e=>{ const k=pairKey(e.from,e.to); pairCounts[k]=(pairCounts[k]||0)+1; });
+  return edges.map(e=>{
+    const A=byId[e.from], B=byId[e.to];
+    if(!A||!B) return null;
+    const canon = [e.from,e.to].slice().sort();
+    const C1=byId[canon[0]], C2=byId[canon[1]];
+    const cdx=C2.x-C1.x, cdy=C2.y-C1.y;
+    const clen=Math.hypot(cdx,cdy)||1;
+    const perpx=-cdy/clen, perpy=cdx/clen;
+    const sign = e.from===canon[0] ? 1 : -1;
+    const pc = pairCounts[pairKey(e.from,e.to)];
+    const bend = pc>1 ? sign*magnitude : 0;
+    const mx=(A.x+B.x)/2+perpx*bend, my=(A.y+B.y)/2+perpy*bend;
+    return {edge:e, A, B, mx, my};
+  }).filter(Boolean);
+}
+// Ray from a circular node's center toward (tx,ty), clipped to its radius —
+// used for the map's round room nodes (Beziehungen uses rectEdgePoint instead).
+function circleEdgePoint(cx, cy, r, tx, ty){
+  const dx=tx-cx, dy=ty-cy;
+  const d=Math.hypot(dx,dy)||1;
+  return {x:cx+dx/d*r, y:cy+dy/d*r};
+}
+// ---- Dungeon-map grid background (square or pointy-top hex) + snapping ----
+function squareGridSnap(x, y, s){ return {x:Math.round(x/s)*s, y:Math.round(y/s)*s}; }
+function renderSquareGridLines(W, H, s){
+  let out = '';
+  for(let x=0; x<=W; x+=s) out += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--border)" stroke-width="1"></line>`;
+  for(let y=0; y<=H; y+=s) out += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="var(--border)" stroke-width="1"></line>`;
+  return out;
+}
+// Pointy-top hex grid, using axial coordinates (q,r) — see redblobgames.com/grids/hexagons
+// for the reference math. "s" is the hex's circumradius (center to a corner).
+function hexAxialToPixel(q, r, s){
+  return {x: s*(Math.sqrt(3)*q + Math.sqrt(3)/2*r), y: s*(1.5*r)};
+}
+function hexPixelToAxial(x, y, s){
+  return {q: (Math.sqrt(3)/3*x - 1/3*y)/s, r: (2/3*y)/s};
+}
+function hexRound(q, r){
+  let x=q, z=r, y=-x-z;
+  let rx=Math.round(x), ry=Math.round(y), rz=Math.round(z);
+  const xDiff=Math.abs(rx-x), yDiff=Math.abs(ry-y), zDiff=Math.abs(rz-z);
+  if(xDiff>yDiff && xDiff>zDiff) rx=-ry-rz;
+  else if(yDiff>zDiff) ry=-rx-rz;
+  else rz=-rx-ry;
+  return {q:rx, r:rz};
+}
+function hexGridSnap(x, y, s){
+  const {q,r} = hexPixelToAxial(x, y, s);
+  const rounded = hexRound(q, r);
+  const px = hexAxialToPixel(rounded.q, rounded.r, s);
+  return {x:Math.round(px.x), y:Math.round(px.y)};
+}
+function hexCornersPoints(cx, cy, s){
+  const pts = [];
+  for(let i=0;i<6;i++){
+    const angle = Math.PI/180*(60*i-30);
+    pts.push(`${(cx+s*Math.cos(angle)).toFixed(1)},${(cy+s*Math.sin(angle)).toFixed(1)}`);
+  }
+  return pts.join(' ');
+}
+function renderHexGridLines(W, H, s){
+  let out = '';
+  const cols = Math.ceil(W/(Math.sqrt(3)*s))+2;
+  const rows = Math.ceil(H/(1.5*s))+2;
+  for(let r=-1; r<rows; r++){
+    for(let q=-2; q<cols; q++){
+      const {x,y} = hexAxialToPixel(q, r, s);
+      if(x<-s || x>W+s || y<-s || y>H+s) continue;
+      out += `<polygon points="${hexCornersPoints(x,y,s)}" fill="none" stroke="var(--border)" stroke-width="1"></polygon>`;
+    }
+  }
+  return out;
+}
+// The inradius (center-to-edge-midpoint) of a hex with circumradius s — used
+// to clip lines to a hex node without overshooting past its flat sides.
+function hexApothem(s){ return s*Math.sqrt(3)/2; }
+function snapToMapGrid(map, x, y){
+  if(!map || map.grid==='none') return {x:Math.round(x), y:Math.round(y)};
+  const s = map.gridSize||40;
+  return map.grid==='hex' ? hexGridSnap(x,y,s) : squareGridSnap(x,y,s);
+}
+function renderStatusControl(boxes, onToggle, onReduce, onClear, reduceInputId){
+  const tier = (()=>{ for(let i=5;i>=0;i--){ if(boxes[i]) return i+1; } return 0; })();
+  return `<div style="display:flex;flex-direction:column;gap:8px;">
+    <div class="row" style="gap:6px;">
+      ${boxes.map((marked,idx)=>`<button class="counter-btn" style="${marked?'background:var(--gold);color:var(--bg);border-color:var(--gold);':''}width:32px;height:32px;font-size:13px;" onclick="${onToggle(idx)}">${idx+1}</button>`).join('')}
+      <span class="small-muted" style="margin-left:6px;">Tier ${tier}</span>
+    </div>
+    <div class="row" style="gap:6px;">
+      <input type="number" min="1" max="6" placeholder="Um" id="${reduceInputId}" style="width:64px;">
+      <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="${onReduce(reduceInputId)}">− Reduzieren</button>
+      <button class="icon-btn raised" title="Zurücksetzen" onclick="${onClear()}">↺</button>
+    </div>
+  </div>`;
+}
+// Old text-based entry syntax ("Text >> Tabelle"), kept only to migrate
+// pre-existing tables into the new structured entry format.
+function legacyParseChainSyntax(text){
+  const lines = text.split('\n');
+  const displayLines = [];
+  let linkNames = [];
+  lines.forEach(line=>{
+    const idx = line.indexOf('>>');
+    if(idx===-1){ displayLines.push(line); return; }
+    const before = line.slice(0,idx).replace(/\s+$/,'');
+    const after = line.slice(idx+2).trim();
+    if(before) displayLines.push(before);
+    if(after) linkNames = linkNames.concat(after.split(',').map(s=>s.trim()).filter(Boolean));
+  });
+  return {display: displayLines.join('\n').trim(), linkNames};
+}
+function migrateTableEntries(rawEntries){
+  return (rawEntries||[]).map(e=>{
+    if(typeof e === 'string'){
+      const {display, linkNames} = legacyParseChainSyntax(e);
+      return {id:uid(), text:display, range:null, links:linkNames};
+    }
+    return Object.assign({id:uid(), text:'', range:null, links:[]}, e);
+  });
+}
+function computeDiceRange(formula){
+  const parsed = parseFormula(formula);
+  if(!parsed) return null;
+  return {min: parsed.count + parsed.mod, max: parsed.count*parsed.sides + parsed.mod};
+}
+function checkCoverage(entries, formula){
+  const range = computeDiceRange(formula);
+  if(!range) return null;
+  const span = range.max - range.min + 1;
+  if(span <= 0 || span > 300) return null;
+  const counts = new Array(span).fill(0);
+  entries.forEach(e=>{
+    if(!e.range) return;
+    const lo = Math.max(e.range.min, range.min);
+    const hi = Math.min(e.range.max, range.max);
+    for(let v=lo; v<=hi; v++) counts[v-range.min]++;
+  });
+  const gaps = [], dupes = [];
+  counts.forEach((c,i)=>{ const val=range.min+i; if(c===0) gaps.push(val); if(c>1) dupes.push(val); });
+  return {range, gaps, dupes};
+}
+function normalizeImportedEntry(e){
+  if(typeof e === 'string') return {id:uid(), text:e, range:null, links:[]};
+  return {
+    id: uid(),
+    text: e.text!=null ? (Array.isArray(e.text) ? e.text.join('\n') : String(e.text)) : '',
+    range: e.range ? {min:Number(e.range.min), max:Number(e.range.max)} : null,
+    links: Array.isArray(e.links) ? e.links.map(String) : [],
+  };
+}
+function parseJSONImport(raw){
+  let data;
+  try{ data = JSON.parse(raw); }catch(e){ return {error: 'Ungültiges JSON: '+e.message}; }
+  const arr = Array.isArray(data) ? data : [data];
+  const tables = [];
+  const karteien = [];
+  const characters = [];
+  arr.forEach(t=>{
+    const looksLikeKartei = !t.mode && Array.isArray(t.entries) && t.entries.some(e=>e && typeof e==='object' && 'title' in e);
+    const looksLikeCharacter = !t.mode && !t.entries && Array.isArray(t.sections);
+    if(looksLikeKartei){
+      karteien.push({
+        name: t.name || 'Unbenannt',
+        icon: (t.icon||'').trim() || '📇',
+        hasCheckbox: !!t.hasCheckbox,
+        // Keep the file's own id/parentId so nesting survives the import;
+        // they're remapped to fresh ids in runImport.
+        entries: t.entries.map((e,idx)=>({
+          fileId: e.id!=null ? String(e.id) : '__idx'+idx,
+          parentFileId: e.parentId!=null ? String(e.parentId) : null,
+          title: e.title || '', notes: e.notes || '', resolved: !!e.resolved,
+        })),
+      });
+      return;
+    }
+    if(looksLikeCharacter){
+      characters.push({
+        name: t.name || 'Unbenannt',
+        sections: t.sections.map(s=>({
+          name: s.name || 'Bereich',
+          fields: (s.fields||[]).map(f=>{
+            const type = ['number','counter','text','list','status','table'].includes(f.type) ? f.type : 'text';
+            let value = f.value;
+            if(type==='status'){
+              value = Array.isArray(value) && value.length===6 ? value : [false,false,false,false,false,false];
+            } else if(type==='table'){
+              value = (value && Array.isArray(value.columns) && Array.isArray(value.rows)) ? value : {columns:['Spalte 1'], rows:[]};
+            } else if(type==='list'){
+              value = Array.isArray(value) ? value : [];
+            } else if(type==='text'){
+              value = value!=null ? String(value) : '';
+            } else {
+              value = value!=null ? String(value) : '0';
+            }
+            return {name: f.name || 'Feld', type, value};
+          }),
+        })),
+      });
+      return;
+    }
+    const mode = t.mode==='aspects' ? 'aspects' : 'list';
+    if(mode==='aspects'){
+      const aspects = (t.aspects||[]).map(a=>({
+        id: uid(), name: a.name || 'Aspekt',
+        distMode: a.distMode==='dist' ? 'dist' : 'equal',
+        formula: a.formula || '',
+        options: (a.options||[]).map(normalizeImportedEntry),
+      }));
+      tables.push({name: t.name || 'Unbenannt', group: t.group || '', mode, aspects, entries:[], distMode:'equal', formula:''});
+      return;
+    }
+    tables.push({
+      name: t.name || 'Unbenannt', group: t.group || '', mode,
+      distMode: t.distMode==='dist' ? 'dist' : 'equal',
+      formula: t.formula || '',
+      entries: (t.entries||[]).map(normalizeImportedEntry),
+      aspects: [],
+    });
+  });
+  return {tables, karteien, characters};
+}

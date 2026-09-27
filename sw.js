@@ -1,9 +1,25 @@
-const CACHE_NAME = 'solorpg-v4';
+// Network-first: when online you always get the latest files (no need to bump
+// a version after every edit); the cache is only the offline fallback.
+const CACHE_NAME = 'solorpg-v5';
 const ASSETS = [
+  './',
   'index.html',
   'manifest.json',
   'icon-192.png',
   'icon-512.png',
+  'css/app.css',
+  'js/util.js',
+  'js/state.js',
+  'js/oracle.js',
+  'js/karteien.js',
+  'js/links.js',
+  'js/battle.js',
+  'js/character.js',
+  'js/journal.js',
+  'js/map.js',
+  'js/relations.js',
+  'js/shell.js',
+  'js/main.js',
 ];
 
 self.addEventListener('install', (e) => {
@@ -23,16 +39,18 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request).then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-        }
-        return response;
-      }).catch(() => cached);
-    })
+    fetch(e.request, { cache: 'no-cache' }).then((response) => {
+      if (response && response.status === 200 && response.type === 'basic') {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+      }
+      return response;
+    }).catch(() =>
+      caches.match(e.request, { ignoreSearch: true }).then((cached) =>
+        cached || (e.request.mode === 'navigate' ? caches.match('index.html') : Response.error())
+      )
+    )
   );
 });
