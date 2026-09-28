@@ -51,6 +51,19 @@ function resolveInlineRefs(text, depth, visited){
   if(!text) return text;
   return text.replace(/\{\{([^}]+)\}\}/g, (whole, name)=>{
     if(depth>5) return '[zu tief verschachtelt]';
+    // {{75%}} → roll d100 against it: "75% [W100: 23 ✔]"
+    const pct = name.trim().match(/^(\d{1,3})\s*%$/);
+    if(pct){
+      const roll = rollDie(100);
+      return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
+    }
+    // {{2d6}} → "2d6→7" (unless a table has that name)
+    const diceF = !findTableByName(name) && parseFormula(name.trim());
+    if(diceF){
+      let sum = diceF.mod;
+      for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
+      return `${name.trim()}→${sum}`;
+    }
     // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
     // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
     const tm = name.trim().match(/^@(?:terrain|gelände)\s*:\s*([^|]+?)\s*(?:\|\s*(.+))?$/i);
