@@ -143,13 +143,8 @@ function circleEdgePoint(cx, cy, r, tx, ty){
   return {x:cx+dx/d*r, y:cy+dy/d*r};
 }
 // ---- Dungeon-map grid background (square or pointy-top hex) + snapping ----
-function squareGridSnap(x, y, s){ return {x:Math.round(x/s)*s, y:Math.round(y/s)*s}; }
-function renderSquareGridLines(W, H, s){
-  let out = '';
-  for(let x=0; x<=W; x+=s) out += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--border)" stroke-width="1"></line>`;
-  for(let y=0; y<=H; y+=s) out += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="var(--border)" stroke-width="1"></line>`;
-  return out;
-}
+// Square grid: rooms sit in the middle of a cell, not on a line crossing.
+function squareGridSnap(x, y, s){ return {x:Math.floor(x/s)*s + s/2, y:Math.floor(y/s)*s + s/2}; }
 // Pointy-top hex grid, using axial coordinates (q,r) — see redblobgames.com/grids/hexagons
 // for the reference math. "s" is the hex's circumradius (center to a corner).
 function hexAxialToPixel(q, r, s){
@@ -180,19 +175,6 @@ function hexCornersPoints(cx, cy, s){
     pts.push(`${(cx+s*Math.cos(angle)).toFixed(1)},${(cy+s*Math.sin(angle)).toFixed(1)}`);
   }
   return pts.join(' ');
-}
-function renderHexGridLines(W, H, s){
-  let out = '';
-  const cols = Math.ceil(W/(Math.sqrt(3)*s))+2;
-  const rows = Math.ceil(H/(1.5*s))+2;
-  for(let r=-1; r<rows; r++){
-    for(let q=-2; q<cols; q++){
-      const {x,y} = hexAxialToPixel(q, r, s);
-      if(x<-s || x>W+s || y<-s || y>H+s) continue;
-      out += `<polygon points="${hexCornersPoints(x,y,s)}" fill="none" stroke="var(--border)" stroke-width="1"></polygon>`;
-    }
-  }
-  return out;
 }
 // The inradius (center-to-edge-midpoint) of a hex with circumradius s — used
 // to clip lines to a hex node without overshooting past its flat sides.
@@ -341,4 +323,96 @@ function parseJSONImport(raw){
     });
   });
   return {tables, karteien, characters};
+}
+
+// ---- Zoomable SVG views (Karte, Beziehungen) ----
+// A view is a scroll container with id `${key}-wrap` holding one <svg>.
+// Zoom 1 = drawing fitted to the panel width; zooming widens the drawing and
+// the container scrolls natively (one finger / scrollbar). Pinch (touch),
+// Ctrl+wheel / trackpad pinch (desktop) and −/100%/+ buttons change it.
+// Zoom and scroll position survive re-renders (see restoreZoomViews).
+const ZOOM_MIN = 1;
+const zoomViews = {};
+function zoomView(key, maxZoom){
+  if(!zoomViews[key]) zoomViews[key] = {z:1, x:0, y:0, max:maxZoom||4};
+  if(maxZoom) zoomViews[key].max = maxZoom;
+  return zoomViews[key];
+}
+function resetZoomScroll(key){ const v = zoomView(key); v.x = 0; v.y = 0; }
+function applyZoom(key, z, anchorX, anchorY){
+  const wrap = document.getElementById(key+'-wrap');
+  if(!wrap) return;
+  const v = zoomView(key);
+  const svg = wrap.querySelector('svg');
+  z = Math.max(ZOOM_MIN, Math.min(v.max, z));
+  const rect = wrap.getBoundingClientRect();
+  const ax = anchorX==null ? rect.width/2 : anchorX-rect.left;
+  const ay = anchorY==null ? rect.height/2 : anchorY-rect.top;
+  const old = svg.getBoundingClientRect();
+  const fx = (wrap.scrollLeft+ax)/(old.width||1), fy = (wrap.scrollTop+ay)/(old.height||1);
+  svg.style.width = (z*100)+'%';
+  const now = svg.getBoundingClientRect();
+  wrap.scrollLeft = fx*now.width - ax;
+  wrap.scrollTop = fy*now.height - ay;
+  v.z = z; v.x = wrap.scrollLeft; v.y = wrap.scrollTop;
+  const lbl = document.getElementById(key+'-zoom-label');
+  if(lbl) lbl.textContent = Math.round(z*100)+'%';
+}
+function zoomBy(key, f){ applyZoom(key, zoomView(key).z*f); }
+function onZoomWheel(e, key){
+  if(!e.ctrlKey) return; // plain wheel scrolls as usual
+  e.preventDefault();
+  applyZoom(key, zoomView(key).z*Math.exp(-e.deltaY*0.003), e.clientX, e.clientY);
+}
+let zoomPinch = null;
+function onZoomTouchStart(e, key){
+  if(e.touches.length===2){
+    const [a,b] = e.touches;
+    zoomPinch = {key, dist:Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY)||1, zoom:zoomView(key).z};
+    if(typeof relationEdgePointerUp==='function') relationEdgePointerUp(); // a pinch is not a long-press
+  }
+}
+function onZoomTouchMove(e, key){
+  if(!zoomPinch || zoomPinch.key!==key || e.touches.length!==2) return;
+  e.preventDefault();
+  const [a,b] = e.touches;
+  const dist = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+  applyZoom(key, zoomPinch.zoom*dist/zoomPinch.dist, (a.clientX+b.clientX)/2, (a.clientY+b.clientY)/2);
+}
+function onZoomTouchEnd(e){ if(e.touches.length<2) zoomPinch = null; }
+function onZoomScroll(el, key){ const v = zoomView(key); v.x = el.scrollLeft; v.y = el.scrollTop; }
+// Attributes for the scroll container, and the −/100%/+ buttons.
+function zoomWrapAttrs(key){
+  return `id="${key}-wrap" onscroll="onZoomScroll(this,'${key}')" onwheel="onZoomWheel(event,'${key}')"
+    ontouchstart="onZoomTouchStart(event,'${key}')" ontouchmove="onZoomTouchMove(event,'${key}')" ontouchend="onZoomTouchEnd(event)" ontouchcancel="onZoomTouchEnd(event)"`;
+}
+function zoomSvgStyle(key){ return `width:${zoomView(key).z*100}%;max-width:none;height:auto;`; }
+function zoomControlsHtml(key, fitTitle){
+  return `<button class="icon-btn raised" title="Verkleinern" onclick="zoomBy('${key}',1/1.4)">−</button>
+    <button class="icon-btn raised" title="${fitTitle||'Alles zeigen'}" onclick="applyZoom('${key}',1)"><span id="${key}-zoom-label" style="font-size:11px;font-family:ui-monospace,monospace;">${Math.round(zoomView(key).z*100)}%</span></button>
+    <button class="icon-btn raised" title="Vergrößern" onclick="zoomBy('${key}',1.4)">+</button>`;
+}
+// render() replaces the DOM; put every zoomed view back where it was.
+function restoreZoomViews(){
+  Object.entries(zoomViews).forEach(([key, v])=>{
+    const wrap = document.getElementById(key+'-wrap');
+    if(wrap){ wrap.scrollLeft = v.x; wrap.scrollTop = v.y; }
+  });
+}
+
+// Grid background as a single rect filled with a repeating <pattern> —
+// constant size no matter how big the map (instead of one element per cell).
+// Aligned to the same lattice as snapToMapGrid (origin 0,0).
+function gridPatternSvg(grid, W, H, s, idPrefix){
+  const id = (idPrefix||'grid')+'-pat';
+  let tile;
+  if(grid==='hex'){
+    const w = Math.sqrt(3)*s;
+    const hexes = [[0,0],[w,0],[w/2,1.5*s],[0,3*s],[w,3*s]].map(([cx,cy])=>
+      `<polygon points="${hexCornersPoints(cx,cy,s)}" fill="none" stroke="var(--border)" stroke-width="1"></polygon>`).join('');
+    tile = `<pattern id="${id}" patternUnits="userSpaceOnUse" x="0" y="0" width="${w.toFixed(3)}" height="${3*s}">${hexes}</pattern>`;
+  } else if(grid==='square'){
+    tile = `<pattern id="${id}" patternUnits="userSpaceOnUse" x="0" y="0" width="${s}" height="${s}"><path d="M ${s} 0 L 0 0 0 ${s}" fill="none" stroke="var(--border)" stroke-width="1"></path></pattern>`;
+  } else return '';
+  return `<defs>${tile}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="url(#${id})" style="pointer-events:none;"></rect>`;
 }

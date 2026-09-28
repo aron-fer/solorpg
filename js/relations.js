@@ -323,7 +323,7 @@ function updateCurrentRelationMap(updater){
 }
 function resetRelationView(){
   ui.relationsConnectFrom=null; ui.relationRollResult=null; ui.confirmDeleteRelationMapId=null;
-  ui.relScroll={x:0, y:0};
+  resetZoomScroll('rel');
 }
 function setActiveRelationMap(id){
   updateActive(camp=>({...camp, activeRelationMapId:id}));
@@ -408,61 +408,6 @@ function saveRelationLayout(target){
   const layout = {key:target.key, size:c.size, pos:c.pos.map(p=>[Math.round(p.x*10)/10, Math.round(p.y*10)/10])};
   updateRelationMap(target.mapId, m=>({...m, layout}));
   saveState();
-}
-
-// ---- Zoom & pan ----
-// The web is drawn fitted to the panel width (zoom 1 = whole web visible).
-// Zooming makes the drawing wider than the panel, which then scrolls natively
-// (one finger / scrollbar). Pinch (touch), Ctrl+wheel / trackpad pinch
-// (desktop) and the −/⤢/+ buttons change the zoom.
-const REL_ZOOM_MIN = 1, REL_ZOOM_MAX = 4;
-function applyRelZoom(z, anchorX, anchorY){
-  const wrap = document.getElementById('rel-wrap');
-  if(!wrap) return;
-  const svg = wrap.querySelector('svg');
-  z = Math.max(REL_ZOOM_MIN, Math.min(REL_ZOOM_MAX, z));
-  const rect = wrap.getBoundingClientRect();
-  const ax = anchorX==null ? rect.width/2 : anchorX-rect.left;
-  const ay = anchorY==null ? rect.height/2 : anchorY-rect.top;
-  const oldW = svg.getBoundingClientRect().width || 1;
-  const fx = (wrap.scrollLeft+ax)/oldW, fy = (wrap.scrollTop+ay)/oldW;
-  svg.style.width = (z*100)+'%';
-  const newW = svg.getBoundingClientRect().width;
-  wrap.scrollLeft = fx*newW - ax;
-  wrap.scrollTop = fy*newW - ay;
-  ui.relZoom = z;
-  ui.relScroll = {x:wrap.scrollLeft, y:wrap.scrollTop};
-  const lbl = document.getElementById('rel-zoom-label');
-  if(lbl) lbl.textContent = Math.round(z*100)+'%';
-}
-function relZoomBy(f){ applyRelZoom(ui.relZoom*f); }
-function relZoomFit(){ applyRelZoom(1); }
-function onRelWheel(e){
-  if(!e.ctrlKey) return; // plain wheel scrolls as usual
-  e.preventDefault();
-  applyRelZoom(ui.relZoom*Math.exp(-e.deltaY*0.003), e.clientX, e.clientY);
-}
-let relPinch = null;
-function onRelTouchStart(e){
-  if(e.touches.length===2){
-    const [a,b] = e.touches;
-    relPinch = {dist:Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY)||1, zoom:ui.relZoom};
-    relationEdgePointerUp(); // a pinch is not a long-press
-  }
-}
-function onRelTouchMove(e){
-  if(!relPinch || e.touches.length!==2) return;
-  e.preventDefault();
-  const [a,b] = e.touches;
-  const dist = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
-  applyRelZoom(relPinch.zoom*dist/relPinch.dist, (a.clientX+b.clientX)/2, (a.clientY+b.clientY)/2);
-}
-function onRelTouchEnd(e){ if(e.touches.length<2) relPinch = null; }
-function onRelScroll(el){ ui.relScroll = {x:el.scrollLeft, y:el.scrollTop}; }
-// render() replaces the DOM; put the zoomed view back where it was.
-function restoreRelationView(){
-  const wrap = document.getElementById('rel-wrap');
-  if(wrap){ wrap.scrollLeft = ui.relScroll.x; wrap.scrollTop = ui.relScroll.y; }
 }
 
 // ---- Factions & relationships (in the current web) ----
@@ -673,10 +618,8 @@ function renderRelationsTab(){
        <button class="icon-btn raised" title="Auswahl aufheben" onclick="cancelRelationSelection()">✕</button>`
     : `<span class="small-muted" style="min-width:0;">Person antippen, um eine Beziehung zu ziehen</span>`;
   html += `<div class="panel" style="padding:6px;gap:6px;">
-    <div class="map-svg-wrap" id="rel-wrap"
-         onscroll="onRelScroll(this)" onwheel="onRelWheel(event)"
-         ontouchstart="onRelTouchStart(event)" ontouchmove="onRelTouchMove(event)" ontouchend="onRelTouchEnd(event)" ontouchcancel="onRelTouchEnd(event)">
-      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="width:${ui.relZoom*100}%;max-width:none;" onclick="cancelRelationSelection()">
+    <div class="map-svg-wrap" ${zoomWrapAttrs('rel')}>
+      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="${zoomSvgStyle('rel')}" onclick="cancelRelationSelection()">
         <defs>
           <marker id="rel-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
@@ -690,9 +633,7 @@ function renderRelationsTab(){
     <div class="row" style="gap:4px;">
       ${selectionInfo}
       <span style="flex:1;"></span>
-      <button class="icon-btn raised" title="Verkleinern" onclick="relZoomBy(1/1.4)">−</button>
-      <button class="icon-btn raised" title="Ganzes Netz zeigen" onclick="relZoomFit()"><span id="rel-zoom-label" style="font-size:11px;font-family:ui-monospace,monospace;">${Math.round(ui.relZoom*100)}%</span></button>
-      <button class="icon-btn raised" title="Vergrößern" onclick="relZoomBy(1.4)">+</button>
+      ${zoomControlsHtml('rel','Ganzes Netz zeigen')}
     </div>
   </div>`;
 

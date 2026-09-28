@@ -143,8 +143,33 @@ function render(){
   document.getElementById('bottomnav').innerHTML = renderNav(false);
   const active = getActive();
   const body = (active.splitView && window.innerWidth>=900) ? renderSplitView() : renderActiveTab();
-  document.getElementById('main').innerHTML = renderHeader() + body + renderModals();
-  restoreRelationView();
+  const main = document.getElementById('main');
+  const html = renderHeader() + body + renderModals();
+  if(!patchAroundMapPanel(main, html)){
+    main.innerHTML = html;
+    mountMapSvg(); // keeps the (possibly huge) map SVG between renders
+    restoreZoomViews();
+  }
+}
+// If the map panel is on screen and stays there, replace only the page parts
+// around it. Taking a map with thousands of hexes out of the page and back
+// makes the browser restyle all of them; leaving it in place avoids that
+// (and keeps its scroll position for free). Returns false if not applicable.
+function patchAroundMapPanel(main, html){
+  const live = document.getElementById('map-panel');
+  if(!live || live.parentNode!==main) return false;
+  const tpl = document.createElement('div');
+  tpl.innerHTML = html;
+  const fresh = tpl.querySelector('#map-panel');
+  if(!fresh || fresh.parentNode!==tpl) return false;
+  const before = [], after = [];
+  let seen = false;
+  [...tpl.childNodes].forEach(n=>{ if(n===fresh){ seen = true; return; } (seen ? after : before).push(n); });
+  [...main.childNodes].forEach(n=>{ if(n!==live) n.remove(); });
+  live.before(...before);
+  live.after(...after);
+  mountMapSvg();
+  return true;
 }
 
 function renderNav(isSidebar){

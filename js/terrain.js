@@ -281,3 +281,45 @@ function terrainContextLabel(ctx){
   if(ctx.terrain) parts.push(TERRAIN_BY_ID[ctx.terrain].label);
   return parts.join(' auf ') || null;
 }
+
+// ---- Shared tile definitions (large maps) ----
+// Each tile type is drawn once in <defs> (in a 40-unit space, hex
+// circumradius 40); every hex then only <use>s it. Keeps a map with
+// thousands of hexes small — and imported images appear once instead of once
+// per hex.
+const TILE_UNIT_W = Math.sqrt(3)*40;
+function tileDefsSvg(baseIds, markIds){
+  let out = '';
+  baseIds.forEach(id=>{
+    const def = TERRAIN_BY_ID[id] || SETTLEMENT_BY_ID[id];
+    if(!def) return;
+    const img = TERRAIN_IMAGES[id];
+    out += img
+      ? `<g id="tile-${id}"><image href="${img}" x="${-TILE_UNIT_W/2}" y="-40" width="${TILE_UNIT_W}" height="80" preserveAspectRatio="none"></image></g>`
+      : `<g id="tile-${id}"><polygon points="${hexCornersPoints(0,0,40)}" fill="${def.fill}"></polygon><g transform="scale(0.92)">${def.draw()}</g></g>`;
+  });
+  markIds.forEach(id=>{
+    const def = SETTLEMENT_BY_ID[id];
+    if(!def) return;
+    const img = TERRAIN_IMAGES[id+'-mark'];
+    out += `<g id="mark-${id}"><circle cx="0" cy="-3.2" r="16.8" fill="#f3e3c8" opacity="0.85"></circle>`
+      + (img
+        ? `<image href="${img}" x="-14.4" y="-16.8" width="28.8" height="24" preserveAspectRatio="xMidYMid meet"></image>`
+        : `<g transform="translate(0,-4) scale(0.9)">${def.mark()}</g>`)
+      + `</g>`;
+  });
+  return out;
+}
+// Base tile id for a hex: its terrain, else a stand-alone settlement tile.
+function tileBaseId(terrain, settlement){
+  return TERRAIN_BY_ID[terrain] ? terrain : (SETTLEMENT_BY_ID[settlement] ? settlement : null);
+}
+// One hex referencing the shared defs. Returns '' if the hex has no tile.
+function hexTileUseSvg(terrain, settlement, x, y, r, stroke, strokeW){
+  const baseId = tileBaseId(terrain, settlement);
+  if(!baseId) return '';
+  const k = (r/40).toFixed(4);
+  let s = `<use href="#tile-${baseId}" transform="translate(${x},${y}) scale(${k})" style="pointer-events:none;"></use>`;
+  if(TERRAIN_BY_ID[terrain] && SETTLEMENT_BY_ID[settlement]) s += `<use href="#mark-${settlement}" transform="translate(${x},${y}) scale(${k})" style="pointer-events:none;"></use>`;
+  return s + `<polygon points="${hexCornersPoints(x,y,r)}" fill="transparent" stroke="${stroke}" stroke-width="${strokeW}"></polygon>`;
+}

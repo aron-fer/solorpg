@@ -70,7 +70,7 @@ function ensureCampaign(data){
     id: m.id||uid(), name: m.name||'Karte', description: m.description||'',
     markerNodeId: m.markerNodeId||null,
     grid: (m.grid==='square'||m.grid==='hex') ? m.grid : 'none',
-    gridSize: m.gridSize>0 ? m.gridSize : 40,
+    gridSize: m.gridSize>0 ? m.gridSize : 40, cellCentered: !!m.cellCentered,
     nodes: (m.nodes||[]).map((n,idx)=>({
       id: n.id||uid(), name: n.name||('Raum '+(idx+1)), num: n.num!=null?String(n.num):String(idx+1),
       x: n.x!=null?n.x:(60+(idx%4)*80), y: n.y!=null?n.y:(50+Math.floor(idx/4)*80),
@@ -82,6 +82,13 @@ function ensureCampaign(data){
       oneway: !!e.oneway,
     })),
   }));
+  // Square-grid rooms used to snap to line crossings; they now sit in cell
+  // centres. Move old crossing-snapped rooms half a cell, once per map.
+  d.maps = d.maps.map(m=>{
+    if(m.grid!=='square' || m.cellCentered) return m.cellCentered ? m : {...m, cellCentered:true};
+    const s = m.gridSize, h = s/2;
+    return {...m, cellCentered:true, nodes: m.nodes.map(n=>(n.x%s===0 && n.y%s===0) ? {...n, x:n.x+h, y:n.y+h} : n)};
+  });
   if(!d.maps.some(m=>m.id===d.activeMapId)) d.activeMapId = d.maps[0] ? d.maps[0].id : null;
   // Relations: one or more faction/NPC relationship webs per campaign (e.g. per
   // region or scale). Older data had a single web at campaign level — it
@@ -167,7 +174,7 @@ let ui = {
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,
   editingRelationEdgeId:null, relationEdgeDraft:null,
-  confirmDeleteRelationMapId:null, relZoom:1, relScroll:{x:0, y:0},
+  confirmDeleteRelationMapId:null,
   backups:null, confirmRestoreBackupId:null,
 };
 

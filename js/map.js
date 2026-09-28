@@ -60,7 +60,10 @@ function addMapNodeAt(x, y, brush){
   saveState(); render();
 }
 function setMapGridType(type){
-  updateCurrentMap(m=>({...m, grid:type}));
+  // Switching to squares: put every room into a cell.
+  updateCurrentMap(m=>({...m, grid:type, nodes: type==='square'
+    ? m.nodes.map(n=>({...n, ...squareGridSnap(n.x, n.y, m.gridSize)}))
+    : m.nodes}));
   saveState(); render();
 }
 function onMapGridSizeInput(el){
@@ -266,6 +269,190 @@ function deleteMapEdge(id){
   ui.editingMapEdgeId=null; ui.mapEdgeDraft=null;
   saveState(); render();
 }
+// ---- Map drawing: one persistent <svg>, updated in place ----
+// render() rebuilds the page as HTML, but the map SVG is kept between renders
+// and patched: the hex layer only replaces hexes whose drawing changed, and
+// selection, move
+// target, 📍 marker, connections and grid are small separate layers. So a
+// tap on a map with thousands of hexes costs about the same as on a small one.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+let mapDom = null; // {svg, mapId, grid, gridSize, images, defsKey, gridKey, nodeEls: Map(id -> {markup, el}), order: [ids]}
+function svgFromMarkup(markup){
+  const tmp = document.createElementNS(SVG_NS, 'svg');
+  tmp.innerHTML = markup;
+  return tmp.firstElementChild;
+}
+function mapNodeRadius(cur, n){ return cur.grid==='hex' ? cur.gridSize : n.r; }
+// One hex/room, independent of UI state (selection etc. live in the overlay).
+function mapNodeMarkup(cur, n){
+  const hexMode = cur.grid==='hex';
+  const r = mapNodeRadius(cur, n);
+  const tileFill = terrainFill(n.terrain) || terrainFill(n.settlement);
+  const tile = hexMode
+    ? hexTileUseSvg(n.terrain, n.settlement, n.x, n.y, r, TERRAIN_INK, 1)
+    : mapTileSvg(n.terrain, n.settlement, n.x, n.y, r, false, TERRAIN_INK, 1);
+  const shape = tile || (hexMode
+    ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="var(--panel-raised)" stroke="var(--border)" stroke-width="2"></polygon>`
+    : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="var(--panel-raised)" stroke="var(--border)" stroke-width="2"></circle>`);
+  // On a tile the number sits at the lower edge with a halo, so the symbol stays visible.
+  const numText = tile
+    ? `<text x="${n.x}" y="${n.y + r*0.8}" text-anchor="middle" font-size="${hexMode ? Math.max(8, r*0.28).toFixed(1) : 9}" font-weight="700" fill="${TERRAIN_INK}" stroke="${tileFill}" stroke-width="3" paint-order="stroke" style="pointer-events:none;">${escapeHtml(n.num)}</text>`
+    : `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)" style="pointer-events:none;">${escapeHtml(n.num)}</text>`;
+  return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">${shape}${numText}</g>`;
+}
+// Selection / move target outlines and the 📍 party marker.
+function mapOverlayMarkup(cur){
+  const hexMode = cur.grid==='hex';
+  const outline = (n, color) => {
+    const r = mapNodeRadius(cur, n);
+    return hexMode
+      ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="none" stroke="${color}" stroke-width="4"></polygon>`
+      : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="none" stroke="${color}" stroke-width="4"></circle>`;
+  };
+  let out = '';
+  const byId = id => id ? cur.nodes.find(n=>n.id===id) : null;
+  const sel = byId(ui.selectedMapNodeId), armed = byId(ui.mapMoveArmedId), marker = byId(cur.markerNodeId);
+  if(sel) out += outline(sel, 'var(--gold)');
+  if(armed) out += outline(armed, 'var(--wax)');
+  if(marker){
+    // A small pin above the room, so it doesn't compete with the selection outline.
+    const n = marker, r = mapNodeRadius(cur, n);
+    const topR = hexMode ? hexApothem(cur.gridSize) : r;
+    const bulbR = 6.5, tailLen = 9, gap = 3;
+    const tipY = n.y - topR - gap, bulbCy = tipY - tailLen;
+    out += `<polygon points="${n.x-3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x+3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x},${tipY}" fill="var(--gold)"></polygon>
+      <circle cx="${n.x}" cy="${bulbCy}" r="${bulbR}" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.4"></circle>
+      <circle cx="${n.x}" cy="${bulbCy}" r="2.6" fill="var(--bg)"></circle>`;
+  }
+  return out;
+}
+// Visible connections and (manage mode) their tap targets.
+function mapEdgesMarkup(cur){
+  const hexMode = cur.grid==='hex';
+  const geoms = curvedEdgeGeometry(cur.nodes, cur.edges, 18);
+  // Touching hex cells leave zero line length between them — then a small
+  // doorway marker on the shared wall stands in for the line.
+  const edgeGeoms = geoms.map(g=>{
+    const A=g.A, B=g.B;
+    const rA = hexMode ? hexApothem(cur.gridSize) : A.r;
+    const rB = hexMode ? hexApothem(cur.gridSize) : B.r;
+    const start = circleEdgePoint(A.x, A.y, rA, g.mx, g.my);
+    const end = circleEdgePoint(B.x, B.y, rB, g.mx, g.my);
+    return {g, e:g.edge, start, end, segLen:Math.hypot(end.x-start.x, end.y-start.y)};
+  });
+  const hits = ui.managing ? edgeGeoms.map(({e,start,end,segLen,g})=>{
+    if(segLen<12){
+      const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
+      return `<circle cx="${midx}" cy="${midy}" r="10" fill="transparent" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></circle>`;
+    }
+    return `<path d="M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}" fill="none" stroke="transparent" stroke-width="16" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></path>`;
+  }).join('') : '';
+  const lines = edgeGeoms.map(({g,e,start,end,segLen})=>{
+    const dashed = e.type==='secret' ? 'stroke-dasharray="5,5"' : '';
+    if(segLen<12){
+      const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
+      const angle = Math.atan2(g.B.y-g.A.y, g.B.x-g.A.x)*180/Math.PI;
+      const secretRing = e.type==='secret' ? `<circle cx="${midx}" cy="${midy}" r="7" fill="none" stroke="var(--gold-dim)" stroke-width="1.5" stroke-dasharray="3,2"></circle>` : '';
+      const mark = e.oneway
+        ? `<g transform="translate(${midx},${midy}) rotate(${angle})"><path d="M -4,-5 L 5,0 L -4,5 z" fill="var(--gold-dim)"></path></g>`
+        : `<circle cx="${midx}" cy="${midy}" r="4" fill="var(--gold-dim)"></circle>`;
+      return secretRing + mark;
+    }
+    const marker = e.oneway ? 'marker-end="url(#map-arrow)"' : '';
+    return `<path d="M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}" fill="none" stroke="var(--gold-dim)" stroke-width="2" ${dashed} ${marker}></path>`;
+  }).join('');
+  return {lines, hits};
+}
+// Which tile/mark definitions the map needs; `key` changes only when that set
+// does (the markup itself can be ~1 MB with imported images, so it's only
+// built when needed).
+function mapTileDefsNeeded(cur){
+  const baseIds = new Set(), markIds = new Set();
+  if(cur.grid==='hex') cur.nodes.forEach(n=>{
+    const b = tileBaseId(n.terrain, n.settlement);
+    if(b) baseIds.add(b);
+    if(TERRAIN_BY_ID[n.terrain] && SETTLEMENT_BY_ID[n.settlement]) markIds.add(n.settlement);
+  });
+  return {baseIds, markIds, key:[...baseIds].sort().join(',')+'|'+[...markIds].sort().join(',')};
+}
+// Called by render() after the page HTML is in place: puts the (kept or new)
+// map SVG into #map-wrap and brings it up to date.
+function mountMapSvg(){
+  const wrap = document.getElementById('map-wrap');
+  if(!wrap) return;
+  const cur = getCurrentMap();
+  if(!cur) return;
+  const hexMode = cur.grid==='hex';
+  // Structural changes (other map, grid type/size, tile images) → start over.
+  const fresh = !mapDom || mapDom.mapId!==cur.id || mapDom.grid!==cur.grid || mapDom.gridSize!==cur.gridSize || mapDom.images!==TERRAIN_IMAGES;
+  if(fresh){
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('onclick', 'onMapCanvasClick(event)');
+    svg.innerHTML = `<defs><marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path></marker><g id="map-tile-defs"></g></defs>
+      <g id="map-grid"></g><g id="map-nodes"></g><g id="map-edges" style="pointer-events:none;"></g><g id="map-edge-hits"></g><g id="map-overlay" style="pointer-events:none;"></g>`;
+    mapDom = {svg, mapId:cur.id, grid:cur.grid, gridSize:cur.gridSize, images:TERRAIN_IMAGES, defsKey:null, gridKey:null, layers:{}, nodeEls:new Map(), order:[]};
+  }
+  const svg = mapDom.svg;
+  const layer = id => svg.querySelector('#'+id);
+
+  // Size (fits all rooms) and zoom.
+  let W = 320, H = 220;
+  cur.nodes.forEach(n=>{ const r = mapNodeRadius(cur, n); if(n.x+r+30>W) W = n.x+r+30; if(n.y+r+30>H) H = n.y+r+30; });
+  const topMargin = 30;
+  const setAttr = (k, v) => { v = String(v); if(svg.getAttribute(k)!==v) svg.setAttribute(k, v); };
+  setAttr('viewBox', `0 ${-topMargin} ${W} ${H+topMargin}`);
+  setAttr('width', W); setAttr('height', H+topMargin);
+  setAttr('style', zoomSvgStyle('map'));
+
+  const gridKey = `${cur.grid}|${cur.gridSize}|${W}|${H}`;
+  if(mapDom.gridKey!==gridKey){ layer('map-grid').innerHTML = gridPatternSvg(cur.grid, W, H, cur.gridSize, 'map'); mapDom.gridKey = gridKey; }
+
+  const need = mapTileDefsNeeded(cur);
+  if(mapDom.defsKey!==need.key){ layer('map-tile-defs').innerHTML = tileDefsSvg(need.baseIds, need.markIds); mapDom.defsKey = need.key; }
+
+  // Hex layer: reuse the element of every hex whose markup is unchanged.
+  // (Compared by markup, not object identity: saving re-normalizes the
+  // campaign, which recreates every node object.)
+  const nodesLayer = layer('map-nodes');
+  const nextEls = new Map(), order = [];
+  cur.nodes.forEach(n=>{
+    const markup = mapNodeMarkup(cur, n);
+    const prev = mapDom.nodeEls.get(n.id);
+    let el;
+    if(prev && prev.markup===markup) el = prev.el;
+    else {
+      el = svgFromMarkup(markup);
+      if(prev) prev.el.replaceWith(el);
+    }
+    nextEls.set(n.id, {markup, el});
+    order.push(n.id);
+  });
+  mapDom.nodeEls.forEach((v, id)=>{ if(!nextEls.has(id)) v.el.remove(); });
+  // Keep DOM order = data order without moving existing elements where
+  // possible (moving thousands of them forces a full restyle): the usual
+  // changes are deletions (already removed above) and additions at the end.
+  const kept = mapDom.order.filter(id=>nextEls.has(id));
+  const isPrefix = kept.every((id,i)=>order[i]===id);
+  const frag = document.createDocumentFragment();
+  if(isPrefix){
+    order.slice(kept.length).forEach(id=>frag.appendChild(nextEls.get(id).el));
+  } else {
+    order.forEach(id=>frag.appendChild(nextEls.get(id).el));
+  }
+  if(frag.childNodes.length) nodesLayer.appendChild(frag);
+  mapDom.nodeEls = nextEls; mapDom.order = order;
+
+  // Small layers: only touch the DOM when their markup changed — any change
+  // inside the SVG makes the browser lay out the whole (big) drawing again.
+  const {lines, hits} = mapEdgesMarkup(cur);
+  const setLayer = (id, markup) => { if(mapDom.layers[id]!==markup){ layer(id).innerHTML = markup; mapDom.layers[id] = markup; } };
+  setLayer('map-edges', lines);
+  setLayer('map-edge-hits', hits);
+  setLayer('map-overlay', mapOverlayMarkup(cur));
+
+  // Re-appending an already placed svg would detach it (→ full restyle).
+  if(svg.parentNode!==wrap) wrap.replaceChildren(svg);
+}
 function renderMapTab(){
   const active = getActive();
   const cur = getCurrentMap();
@@ -319,115 +506,9 @@ function renderMapTab(){
     }
   }
 
-  const hexMode = cur.grid==='hex';
-  // In hex mode every room is a fixed-size hex that exactly fills one grid
-  // cell (no per-room resizing there — that's the trade-off for rooms that
-  // always tile cleanly with the grid).
-  const nodeR = n => hexMode ? cur.gridSize : n.r;
-  const W = Math.max(320, 320, ...cur.nodes.map(n=>n.x+nodeR(n)+30));
-  const H = Math.max(220, 220, ...cur.nodes.map(n=>n.y+nodeR(n)+30));
-  const gridSvg = hexMode ? renderHexGridLines(W, H, cur.gridSize)
-    : cur.grid==='square' ? renderSquareGridLines(W, H, cur.gridSize) : '';
-  const geoms = curvedEdgeGeometry(cur.nodes, cur.edges, 18);
-  // Split into an (invisible, clickable) hit-test layer that stays BELOW the
-  // nodes — so tapping a node always wins over tapping a nearby edge — and
-  // the actual visible line, drawn AFTER the nodes so hex-filled rooms that
-  // sit right next to each other don't swallow the connector between them.
-  // Precompute each edge's clipped endpoints once, since touching hex cells
-  // (the normal case for hex-neighbor rooms) leave zero line length between
-  // them — both the hit-test layer and the visible layer need to fall back
-  // to a small doorway marker at the shared wall in that case.
-  const edgeGeoms = geoms.map(g=>{
-    const A=g.A, B=g.B, e=g.edge;
-    const rA = hexMode ? hexApothem(cur.gridSize) : A.r;
-    const rB = hexMode ? hexApothem(cur.gridSize) : B.r;
-    const start = circleEdgePoint(A.x, A.y, rA, g.mx, g.my);
-    const end = circleEdgePoint(B.x, B.y, rB, g.mx, g.my);
-    const segLen = Math.hypot(end.x-start.x, end.y-start.y);
-    return {g, e, start, end, segLen};
-  });
-  const edgeHitSvg = ui.managing ? edgeGeoms.map(({e,start,end,segLen,g})=>{
-    if(segLen<12){
-      const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
-      return `<circle cx="${midx}" cy="${midy}" r="10" fill="transparent" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></circle>`;
-    }
-    const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
-    return `<path d="${d}" fill="none" stroke="transparent" stroke-width="16" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></path>`;
-  }).join('') : '';
-  const edgesSvg = edgeGeoms.map(({g,e,start,end,segLen})=>{
-    const dashed = e.type==='secret' ? 'stroke-dasharray="5,5"' : '';
-    if(segLen<12){
-      // Adjacent hex rooms already share a wall — mark the connection right
-      // on that shared edge instead of drawing a (now zero-length) line.
-      const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
-      const angle = Math.atan2(g.B.y-g.A.y, g.B.x-g.A.x)*180/Math.PI;
-      const secretRing = e.type==='secret' ? `<circle cx="${midx}" cy="${midy}" r="7" fill="none" stroke="var(--gold-dim)" stroke-width="1.5" stroke-dasharray="3,2"></circle>` : '';
-      const mark = e.oneway
-        ? `<g transform="translate(${midx},${midy}) rotate(${angle})"><path d="M -4,-5 L 5,0 L -4,5 z" fill="var(--gold-dim)"></path></g>`
-        : `<circle cx="${midx}" cy="${midy}" r="4" fill="var(--gold-dim)"></circle>`;
-      return `<g style="pointer-events:none;">${secretRing}${mark}</g>`;
-    }
-    const d = `M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}`;
-    const marker = e.oneway ? 'marker-end="url(#map-arrow)"' : '';
-    return `<path d="${d}" fill="none" stroke="var(--gold-dim)" stroke-width="2" ${dashed} ${marker} style="pointer-events:none;"></path>`;
-  }).join('');
-  const nodesSvg = cur.nodes.map(n=>{
-    const isMarker = cur.markerNodeId===n.id;
-    const isSelected = ui.selectedMapNodeId===n.id;
-    const isMoveArmed = ui.mapMoveArmedId===n.id;
-    const r = nodeR(n);
-    // Terrain/settlement tiles keep their look; selection/move then shows as
-    // a thick outline. Plain rooms keep the old filled style.
-    const tileFill = terrainFill(n.terrain) || terrainFill(n.settlement);
-    const tileStroke = isMoveArmed ? 'var(--wax)' : (isSelected ? 'var(--gold)' : TERRAIN_INK);
-    const tile = mapTileSvg(n.terrain, n.settlement, n.x, n.y, r, hexMode, tileStroke, isSelected||isMoveArmed ? 4 : 1);
-    const fill = isSelected?'var(--gold-dim)':'var(--panel-raised)';
-    const stroke = isMoveArmed?'var(--wax)':'var(--border)';
-    const shape = tile || (hexMode
-      ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="${fill}" stroke="${stroke}" stroke-width="2"></polygon>`
-      : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"></circle>`);
-    // On a tile the number moves to the lower edge with a halo, so the
-    // symbol stays visible.
-    const numText = tile
-      ? `<text x="${n.x}" y="${n.y + (hexMode ? r*0.8 : r*0.8)}" text-anchor="middle" font-size="${hexMode ? Math.max(8, r*0.28).toFixed(1) : 9}" font-weight="700" fill="${TERRAIN_INK}" stroke="${tileFill}" stroke-width="3" paint-order="stroke" style="pointer-events:none;">${escapeHtml(n.num)}</text>`
-      : `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.num)}</text>`;
-    // Player-position marker: a small flag/pin above the room instead of a
-    // ring around it, so it doesn't compete visually with the room's own
-    // selection highlight and reads the same for circular and hex rooms.
-    let pinMarker = '';
-    if(isMarker){
-      const topR = hexMode ? hexApothem(cur.gridSize) : r;
-      const bulbR = 6.5, tailLen = 9, gap = 3;
-      const tipY = n.y - topR - gap;
-      const bulbCy = tipY - tailLen;
-      pinMarker = `<g style="pointer-events:none;">
-        <polygon points="${n.x-3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x+3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x},${tipY}" fill="var(--gold)"></polygon>
-        <circle cx="${n.x}" cy="${bulbCy}" r="${bulbR}" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.4"></circle>
-        <circle cx="${n.x}" cy="${bulbCy}" r="2.6" fill="var(--bg)"></circle>
-      </g>`;
-    }
-    return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">
-      ${shape}
-      ${numText}
-      ${pinMarker}
-    </g>`;
-  }).join('');
-
-  const topMargin = 30;
-  html += `<div class="panel" style="padding:6px;">
-    <div class="map-svg-wrap">
-      <svg viewBox="0 ${-topMargin} ${W} ${H+topMargin}" width="${W}" height="${H+topMargin}" onclick="onMapCanvasClick(event)">
-        <defs>
-          <marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
-          </marker>
-        </defs>
-        ${gridSvg}
-        ${nodesSvg}
-        ${edgesSvg}
-        ${edgeHitSvg}
-      </svg>
-    </div>
+  html += `<div class="panel" id="map-panel" style="padding:6px;gap:6px;">
+    <div class="map-svg-wrap" ${zoomWrapAttrs('map')}></div>
+    <div class="row" style="gap:4px;justify-content:flex-end;">${zoomControlsHtml('map','Ganze Karte zeigen')}</div>
   </div>`;
 
   if(ui.mapEncounterResult){
