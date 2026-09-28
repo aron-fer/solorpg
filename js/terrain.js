@@ -214,3 +214,70 @@ function terrainSwatchSvg(id, size){
       <text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="12" fill="var(--text-faint)">–</text>`}
   </svg>`;
 }
+
+// ---- Encounter tables by terrain ----
+// A table entry {{@terrain: ANIMAL}} rolls on "<terrain table>: ANIMAL" for
+// the terrain the party is in. Candidate table-name prefixes per terrain, in
+// order (first existing table wins); e.g. plateau falls back to Hills.
+const TERRAIN_TABLE_NAMES = {
+  'hills':['Hills'], 'hills-icy':['Hills (Icy)','Hills, Icy'],
+  'mountains':['Mountains'], 'mountains-icy':['Mountains (Icy)','Mountains, Icy'],
+  'volcanic':['Volcanic'], 'volcanic-icy':['Volcanic (Icy)','Volcanic, Icy'],
+  'desert':['Desert'], 'desert-steppe':['Desert Steppe'], 'grassy-plains':['Grassy Plains'],
+  'plateau':['Plateau','Hills'], 'tar-pits':['Tar Pits'], 'tundra':['Tundra'],
+  'forest':['Forest'], 'rainforest':['Rainforest'], 'wetlands':['Wetlands'],
+  'river':['River','Lake River','Lake/River'], 'lake':['Lake','Lake River','Lake/River'], 'ocean':['Ocean'],
+  'obelisk':['Great Obelisk','Mountains'], 'rapids':['Rapids at the End of the World','Ocean'],
+};
+const SETTLEMENT_TABLE_NAMES = { city:['City'], town:['Town Village','Town/Village','Town'] };
+const COASTAL_TERRAINS = new Set(['ocean','rapids']);
+const DESERT_TERRAINS = new Set(['desert','desert-steppe']);
+
+// Manual override values: a terrain id, or 'city' / 'town' optionally with
+// ':coastal' / ':desert'. Stored per campaign (terrainOverride).
+function parseTerrainOverride(v){
+  if(!v) return null;
+  const [base, variant] = v.split(':');
+  if(SETTLEMENT_BY_ID[base]) return {terrain:null, settlement:base, coastal:variant==='coastal', desert:variant==='desert'};
+  if(TERRAIN_BY_ID[base]) return {terrain:base, settlement:null, coastal:false, desert:DESERT_TERRAINS.has(base)};
+  return null;
+}
+// Where the party is: the manual override if set, else the 📍 marker hex of
+// the current map (ignoreOverride: map only). Returns {terrain, settlement, coastal, desert, node, source}
+// or null.
+function currentTerrainContext(ignoreOverride){
+  const active = getActive();
+  const ov = ignoreOverride ? null : parseTerrainOverride(active.terrainOverride);
+  if(ov) return {...ov, node:null, source:'manual'};
+  const map = getCurrentMap();
+  const node = map && map.markerNodeId ? map.nodes.find(n=>n.id===map.markerNodeId) : null;
+  if(!node || !(node.terrain || node.settlement)) return node ? {terrain:null, settlement:null, node, source:'map'} : null;
+  let coastal = false;
+  if(map.grid==='hex'){
+    // Any neighbouring hex (within ~1 cell) that is ocean makes it coastal.
+    const reach = Math.sqrt(3)*map.gridSize*1.15;
+    coastal = map.nodes.some(o=>o.id!==node.id && COASTAL_TERRAINS.has(o.terrain) && Math.hypot(o.x-node.x, o.y-node.y) <= reach);
+  }
+  return {terrain:node.terrain, settlement:node.settlement, coastal, desert:DESERT_TERRAINS.has(node.terrain), node, source:'map'};
+}
+// Ordered table-name prefixes for a context (settlement variants first).
+function terrainTablePrefixes(ctx){
+  if(!ctx) return [];
+  const out = [];
+  if(ctx.settlement){
+    (SETTLEMENT_TABLE_NAMES[ctx.settlement]||[]).forEach(base=>{
+      if(ctx.coastal) out.push(base+' (Coastal)');
+      if(ctx.desert) out.push(base+' (Desert)');
+      out.push(base);
+    });
+  }
+  if(ctx.terrain) (TERRAIN_TABLE_NAMES[ctx.terrain]||[TERRAIN_BY_ID[ctx.terrain].label]).forEach(p=>out.push(p));
+  return out;
+}
+function terrainContextLabel(ctx){
+  if(!ctx) return null;
+  const parts = [];
+  if(ctx.settlement) parts.push(SETTLEMENT_BY_ID[ctx.settlement].label + (ctx.coastal ? ' (Coastal)' : ctx.desert ? ' (Desert)' : ''));
+  if(ctx.terrain) parts.push(TERRAIN_BY_ID[ctx.terrain].label);
+  return parts.join(' auf ') || null;
+}

@@ -74,7 +74,7 @@ function ensureCampaign(data){
     nodes: (m.nodes||[]).map((n,idx)=>({
       id: n.id||uid(), name: n.name||('Raum '+(idx+1)), num: n.num!=null?String(n.num):String(idx+1),
       x: n.x!=null?n.x:(60+(idx%4)*80), y: n.y!=null?n.y:(50+Math.floor(idx/4)*80),
-      r: n.r!=null?n.r:16, desc: n.desc||'', terrain: n.terrain||null, settlement: n.settlement||null,
+      r: n.r!=null?n.r:16, desc: n.desc||'', terrain: n.terrain||null, settlement: n.settlement||null, area: n.area||'',
     })),
     edges: (m.edges||[]).map(e=>({
       id: e.id||uid(), from:e.from, to:e.to,
@@ -159,7 +159,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   characterViewMode:'full',
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapBrush:null,
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null,
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,

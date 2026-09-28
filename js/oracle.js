@@ -51,6 +51,23 @@ function resolveInlineRefs(text, depth, visited){
   if(!text) return text;
   return text.replace(/\{\{([^}]+)\}\}/g, (whole, name)=>{
     if(depth>5) return '[zu tief verschachtelt]';
+    // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
+    // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
+    const tm = name.trim().match(/^@(?:terrain|gelände)\s*:\s*([^|]+?)\s*(?:\|\s*(.+))?$/i);
+    if(tm){
+      const cat = tm[1].trim(), fallback = (tm[2]||'').trim();
+      const ctx = currentTerrainContext();
+      const prefixes = terrainTablePrefixes(ctx);
+      if(!prefixes.length && fallback) prefixes.push(fallback);
+      if(!prefixes.length) return `${cat} [Gelände unbekannt — 📍 Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
+      const prefix = prefixes.find(p=>findTableByName(`${p}: ${cat}`));
+      if(!prefix) return `${cat} [keine Tabelle „${prefixes[0]}: ${cat}“]`;
+      const table = findTableByName(`${prefix}: ${cat}`);
+      if(visited.has(table.id)) return '[Zirkelverweis]';
+      const nextVisited = new Set(visited);
+      nextVisited.add(table.id);
+      return `${cat} (${prefix}) → ${rollTableCore(table, depth+1, nextVisited).text}`;
+    }
     const table = findTableByName(name.trim());
     if(!table) return `[${name.trim()} nicht gefunden]`;
     if(visited.has(table.id)) return '[Zirkelverweis]';
@@ -483,11 +500,47 @@ function renderDiceRollerPanel(ctx){
   </div>`;
 }
 
+// ---- Position (terrain for {{@terrain: …}} tables, area encounter) ----
+function setTerrainOverride(v){
+  updateActive(camp=>({...camp, terrainOverride: v || null}));
+  saveState(); render();
+}
+function findAreaTable(node){
+  return node && node.area ? findTableByName(node.area) : null;
+}
+function rollAreaEncounter(){
+  // The area always comes from the 📍 hex, even if the terrain is overridden.
+  const ctx = currentTerrainContext(true);
+  const table = findAreaTable(ctx && ctx.node);
+  if(!table) return;
+  handleRollTable(table.id);
+}
+function renderPositionPanel(){
+  const active = getActive();
+  const ov = active.terrainOverride || '';
+  const mapCtx = currentTerrainContext(true);
+  const autoLabel = mapCtx && mapCtx.node
+    ? `Karte: Feld ${mapCtx.node.num}${terrainContextLabel(mapCtx) ? ' · '+terrainContextLabel(mapCtx) : ' · (kein Gelände)'}`
+    : 'Karte: kein 📍 Marker gesetzt';
+  const opt = (v, label) => `<option value="${v}" ${ov===v?'selected':''}>${escapeHtml(label)}</option>`;
+  const options = opt('', 'Automatisch — '+autoLabel)
+    + `<optgroup label="Gelände">${TERRAINS.map(t=>opt(t.id, t.label)).join('')}</optgroup>`
+    + `<optgroup label="Siedlung">${SETTLEMENTS.map(s=>opt(s.id, s.label)+opt(s.id+':coastal', s.label+' (Coastal)')+opt(s.id+':desert', s.label+' (Desert)')).join('')}</optgroup>`;
+  const areaTable = findAreaTable(mapCtx && mapCtx.node);
+  return `<div class="panel">
+    <span class="label">🧭 Position</span>
+    <select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>
+    ${areaTable
+      ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">🎲 Begegnung: ${escapeHtml(areaTable.name)}</button>`
+      : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes. Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.</p>`}
+  </div>`;
+}
 function renderDiceTab(){
   const active = getActive();
   let html = `<div class="grid-cards">`;
   html += renderResultsPanel('span-all', 'oracle');
   html += renderDiceRollerPanel('oracle');
+  html += renderPositionPanel();
 
   html += `<div class="panel"><div class="row between"><span class="label">Tabellen</span>
     ${ui.managing ? `<div class="row" style="gap:6px;">

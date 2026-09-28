@@ -53,8 +53,9 @@ function addMapNodeAt(x, y, brush){
   const t = brush && TERRAIN_BY_ID[brush];
   const s = brush && brush.startsWith('set:') && SETTLEMENT_BY_ID[brush.slice(4)];
   const def = t || s;
-  const node = {id:uid(), name: def ? def.label : 'Raum '+(idx+1), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
-    terrain: t ? brush : null, settlement: s ? s.id : null};
+  const area = (ui.mapAreaBrush||'').trim();
+  const node = {id:uid(), name: def ? def.label : (area || 'Raum '+(idx+1)), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
+    terrain: t ? brush : null, settlement: s ? s.id : null, area};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
   saveState(); render();
 }
@@ -106,17 +107,48 @@ function setMapBrush(id){
   ui.mapConnectFrom = null; ui.mapMoveArmedId = null;
   render();
 }
+function applyBrushToNode(n, brush){
+  if(!brush) return n;
+  if(brush==='__clear') return {...n, terrain:null, settlement:null};
+  if(brush.startsWith('set:')){
+    const s = brush.slice(4);
+    return {...n, settlement: n.settlement===s ? null : s};
+  }
+  return {...n, terrain: brush};
+}
 function paintMapNode(id, brush){
+  updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>n.id===id ? applyBrushToNode(n, brush) : n)}));
+  saveState(); render();
+}
+// Applies the terrain/settlement brush and the area brush (both optional).
+function applyBrushesToNode(id){
+  const area = (ui.mapAreaBrush||'').trim();
   updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>{
     if(n.id!==id) return n;
-    if(brush==='__clear') return {...n, terrain:null, settlement:null};
-    if(brush.startsWith('set:')){
-      const s = brush.slice(4);
-      return {...n, settlement: n.settlement===s ? null : s};
-    }
-    return {...n, terrain: brush};
+    const painted = applyBrushToNode(n, ui.mapBrush);
+    return area ? {...painted, area} : painted;
   })}));
   saveState(); render();
+}
+function onMapAreaBrushInput(el){ ui.mapAreaBrush = el.value; }
+// Table names offered for areas: tables that aren't terrain sub-tables
+// ("Forest: ANIMAL 1") — i.e. the area/region tables.
+function areaTableNames(){
+  return getActive().tables.map(t=>t.name).filter(n=>!/: [A-Z]/.test(n));
+}
+function areaDatalistHtml(){
+  return `<datalist id="area-table-names">${areaTableNames().map(n=>`<option value="${escapeHtml(n)}"></option>`).join('')}</datalist>`;
+}
+// Moves the 📍 party marker here and rolls this hex's area table (which
+// resolves {{@terrain: …}} against this hex). The result also goes to the
+// Orakel log; it's shown on the map too.
+function travelAndEncounter(id){
+  updateCurrentMap(m=>({...m, markerNodeId:id}));
+  saveState();
+  rollAreaEncounter();
+  const top = getActive().log[0];
+  ui.mapEncounterResult = top ? top.text : null;
+  render();
 }
 function brushLabel(brush){
   if(brush==='__clear') return 'Gelände & Siedlung entfernen';
@@ -133,7 +165,7 @@ function selectMapNode(id){
       ui.mapConnectFrom=null; render(); return;
     }
     if(ui.mapMoveArmedId) return;
-    if(ui.mapBrush){ paintMapNode(id, ui.mapBrush); return; }
+    if(ui.mapBrush || (ui.mapAreaBrush||'').trim()){ applyBrushesToNode(id); return; }
     startEditMapNode(id);
     return;
   }
@@ -172,7 +204,7 @@ function startEditMapNode(id){
   const n = cur && cur.nodes.find(x=>x.id===id);
   if(!n) return;
   ui.editingMapNodeId = id;
-  ui.mapNodeDraft = {name:n.name, num:n.num, desc:n.desc, r:n.r, terrain:n.terrain||null, settlement:n.settlement||null};
+  ui.mapNodeDraft = {name:n.name, num:n.num, desc:n.desc, r:n.r, terrain:n.terrain||null, settlement:n.settlement||null, area:n.area||''};
   render();
 }
 function cancelMapNodeModal(){ ui.editingMapNodeId=null; ui.mapNodeDraft=null; render(); }
@@ -186,6 +218,7 @@ function saveMapNode(){
     r: Math.max(10, Math.min(40, parseInt(d.r,10)||n.r)),
     terrain: d.terrain || null,
     settlement: d.settlement || null,
+    area: (d.area||'').trim(),
   }:n)}));
   ui.editingMapNodeId=null; ui.mapNodeDraft=null;
   saveState(); render();
@@ -271,6 +304,14 @@ function renderMapTab(){
     <div style="display:flex;flex-direction:column;gap:4px;">
       <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '') : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
       ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <span class="small-muted">Gebiet-Pinsel (Begegnungstabelle, z.B. New Pictland) — solange ausgefüllt, bekommt jedes angetippte Feld dieses Gebiet. Leeren = aus.</span>
+      <div class="row" style="gap:6px;">
+        <input type="text" list="area-table-names" value="${escapeHtml(ui.mapAreaBrush||'')}" oninput="onMapAreaBrushInput(this)" onchange="render()" placeholder="Gebiet…" style="flex:1;">
+        ${ui.mapAreaBrush ? `<button class="icon-btn raised" title="Gebiet-Pinsel aus" onclick="ui.mapAreaBrush=''; render();">✕</button>` : ''}
+      </div>
+      ${areaDatalistHtml()}
     </div>
     <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.</p>`;
     if(ui.mapMoveArmedId){
@@ -389,6 +430,14 @@ function renderMapTab(){
     </div>
   </div>`;
 
+  if(ui.mapEncounterResult){
+    html += `<div class="panel" style="border-color:var(--gold-dim);">
+      <div class="row between" style="gap:8px;align-items:flex-start;">
+        <span class="log-text" style="color:var(--text);">🎲 ${escapeHtml(ui.mapEncounterResult)}</span>
+        <button class="icon-btn" onclick="ui.mapEncounterResult=null; render();">✕</button>
+      </div>
+    </div>`;
+  }
   if(cur.nodes.length===0){
     html += `<p class="small-muted">${ui.managing ? 'Noch keine Räume — tippe oben auf „+ Raum".' : 'Noch keine Räume auf dieser Karte.'}</p>`;
   }
@@ -417,7 +466,12 @@ function renderMapTab(){
           <span class="small-muted">Verbindungen</span>
           ${connectedEdges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
         </div>
-        <button class="btn btn-gold" onclick="setMarkerHere('${n.id}')">📍 Marker hierher</button>
+        ${(n.terrain || n.settlement || n.area) ? `<span class="small-muted">${escapeHtml([terrainContextLabel({terrain:n.terrain, settlement:n.settlement}), n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
+        ${n.area && findTableByName(n.area)
+          ? `<button class="btn btn-gold" onclick="travelAndEncounter('${n.id}')">📍 Hierher reisen + 🎲 Begegnung</button>
+             <button class="btn btn-raised" onclick="setMarkerHere('${n.id}')">📍 Nur Marker hierher</button>`
+          : `${n.area ? `<p class="small-muted" style="margin:0;color:var(--wax);">Keine Tabelle „${escapeHtml(n.area)}“ gefunden.</p>` : ''}
+             <button class="btn btn-gold" onclick="setMarkerHere('${n.id}')">📍 Marker hierher</button>`}
       </div>`;
     }
   }
@@ -463,6 +517,9 @@ function renderMapNodeModal(){
     ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
     <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
     ${renderSettlementChoice(d.settlement)}
+    <span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
+    <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Gebiet…">
+    ${areaDatalistHtml()}
     ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jeder Raum immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
     <div class="row between">
       <span class="small-muted">Größe</span>
