@@ -472,17 +472,33 @@ function addRelationNode(){
   saveState();
   startEditRelationNode(id);
 }
-function toggleRelationConnectMode(){
-  ui.relationsConnectFrom = (ui.relationsConnectFrom==null) ? 'PENDING' : null;
-  render();
+// Tapping factions connects them: first tap selects, tap on a second faction
+// opens "new relationship" for the pair, tapping the selected one again (or
+// empty space) cancels. Editing a faction is explicit: hold it, or use the
+// ✎ button in the selection bar.
+function relationNodeClick(evt, id){
+  evt.stopPropagation();
+  if(relationLongPressFired){ relationLongPressFired=false; return; }
+  const from = ui.relationsConnectFrom;
+  if(!from){ ui.relationsConnectFrom = id; render(); return; }
+  ui.relationsConnectFrom = null;
+  if(from===id){ render(); return; }
+  startNewRelationEdge(from, id);
 }
-function selectRelationNode(id){
-  if(ui.relationsConnectFrom==='PENDING'){ ui.relationsConnectFrom=id; render(); return; }
-  if(ui.relationsConnectFrom && ui.relationsConnectFrom!=='PENDING'){
-    if(ui.relationsConnectFrom!==id) startNewRelationEdge(ui.relationsConnectFrom, id);
-    ui.relationsConnectFrom=null; render(); return;
-  }
-  startEditRelationNode(id);
+function relationNodePointerDown(evt, id){
+  relationLongPressFired = false;
+  if(relationLongPressTimer) clearTimeout(relationLongPressTimer);
+  relationLongPressTimer = setTimeout(()=>{
+    relationLongPressFired = true; ui.relationsConnectFrom = null; startEditRelationNode(id);
+  }, 450);
+}
+function editSelectedRelationNode(){
+  const id = ui.relationsConnectFrom;
+  ui.relationsConnectFrom = null;
+  if(id) startEditRelationNode(id);
+}
+function cancelRelationSelection(){
+  if(ui.relationsConnectFrom){ ui.relationsConnectFrom = null; render(); }
 }
 function startEditRelationNode(id){
   const cur = getCurrentRelationMap();
@@ -574,13 +590,11 @@ function renderRelationsTab(){
     return html;
   }
   if(ui.managing){
-    const connectLabel = ui.relationsConnectFrom==='PENDING' ? '🔗 Ersten Knoten tippen…' : (ui.relationsConnectFrom ? '🔗 Zweiten Knoten tippen…' : '🔗 Verbinden');
     const confirming = ui.confirmDeleteRelationMapId===cur.id;
     html += `<div class="panel" style="gap:8px;">
       <input type="text" value="${escapeHtml(cur.name)}" placeholder="Name des Netzes (z.B. Hafenstadt, Königreich)" oninput="onRelationMapNameInput(this)" onchange="render()">
       <div class="row wrap" style="gap:8px;">
         <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="addRelationNode()">+ Person/Fraktion</button>
-        <button class="btn ${ui.relationsConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleRelationConnectMode()">${connectLabel}</button>
         ${confirming
           ? `<span class="row" style="gap:6px;margin-left:auto;">
                <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteRelationMap('${cur.id}')">Wirklich löschen</button>
@@ -619,8 +633,10 @@ function renderRelationsTab(){
   });
   const nodesSvg = nodes.map(n=>{
     const box = nodeBoxes[n.id];
-    return `<g onclick="event.stopPropagation(); selectRelationNode('${n.id}')" style="cursor:pointer;">
-      <rect x="${n.x-box.w/2}" y="${n.y-box.h/2}" width="${box.w}" height="${box.h}" rx="6" fill="var(--panel-raised)" stroke="var(--gold-dim)" stroke-width="2"></rect>
+    const selected = ui.relationsConnectFrom===n.id;
+    return `<g onclick="relationNodeClick(event,'${n.id}')" onpointerdown="relationNodePointerDown(event,'${n.id}')"
+        onpointerup="relationEdgePointerUp()" onpointerleave="relationEdgePointerUp()" onpointercancel="relationEdgePointerUp()" style="cursor:pointer;">
+      <rect x="${n.x-box.w/2}" y="${n.y-box.h/2}" width="${box.w}" height="${box.h}" rx="6" fill="${selected?'var(--gold-dim)':'var(--panel-raised)'}" stroke="${selected?'var(--gold)':'var(--gold-dim)'}" stroke-width="${selected?3:2}"></rect>
       <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.name)}</text>
     </g>`;
   }).join('');
@@ -647,11 +663,20 @@ function renderRelationsTab(){
     return `<rect x="${lbl.cx-lbl.w/2-pad}" y="${lbl.cy-lbl.h/2-pad}" width="${lbl.w+pad*2}" height="${lbl.h+pad*2}" fill="transparent" ${hitAttrs(e.id)}></rect>`;
   }).join('');
 
+  const selNode = ui.relationsConnectFrom && cur.nodes.find(n=>n.id===ui.relationsConnectFrom);
+  if(ui.relationsConnectFrom && !selNode) ui.relationsConnectFrom = null;
+  // Lives in the always-present row under the web, so selecting doesn't shift
+  // the drawing right before the second tap.
+  const selectionInfo = selNode
+    ? `<span style="font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><b style="color:var(--gold);">${escapeHtml(selNode.name)}</b> → zweite tippen</span>
+       <button class="icon-btn raised" title="${escapeHtml(selNode.name)} bearbeiten" onclick="editSelectedRelationNode()">✎</button>
+       <button class="icon-btn raised" title="Auswahl aufheben" onclick="cancelRelationSelection()">✕</button>`
+    : `<span class="small-muted" style="min-width:0;">Person antippen, um eine Beziehung zu ziehen</span>`;
   html += `<div class="panel" style="padding:6px;gap:6px;">
     <div class="map-svg-wrap" id="rel-wrap"
          onscroll="onRelScroll(this)" onwheel="onRelWheel(event)"
          ontouchstart="onRelTouchStart(event)" ontouchmove="onRelTouchMove(event)" ontouchend="onRelTouchEnd(event)" ontouchcancel="onRelTouchEnd(event)">
-      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="width:${ui.relZoom*100}%;max-width:none;">
+      <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="width:${ui.relZoom*100}%;max-width:none;" onclick="cancelRelationSelection()">
         <defs>
           <marker id="rel-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path>
@@ -662,7 +687,9 @@ function renderRelationsTab(){
         ${edgeHitSvg}
       </svg>
     </div>
-    <div class="row" style="gap:4px;justify-content:flex-end;">
+    <div class="row" style="gap:4px;">
+      ${selectionInfo}
+      <span style="flex:1;"></span>
       <button class="icon-btn raised" title="Verkleinern" onclick="relZoomBy(1/1.4)">−</button>
       <button class="icon-btn raised" title="Ganzes Netz zeigen" onclick="relZoomFit()"><span id="rel-zoom-label" style="font-size:11px;font-family:ui-monospace,monospace;">${Math.round(ui.relZoom*100)}%</span></button>
       <button class="icon-btn raised" title="Vergrößern" onclick="relZoomBy(1.4)">+</button>
@@ -679,7 +706,7 @@ function renderRelationsTab(){
       <button class="icon-btn" onclick="ui.relationRollResult=null; render();">✕</button>
     </div></div>`;
   }
-  html += `<p class="small-muted">Tippen = würfeln · Halten = Beziehung bearbeiten · Knoten tippen = umbenennen · Zwei Finger / Strg+Mausrad = zoomen</p>`;
+  html += `<p class="small-muted">Beziehung tippen = würfeln, halten = bearbeiten · Zwei Personen nacheinander tippen = verbinden, halten = bearbeiten · Zwei Finger / Strg+Mausrad = zoomen</p>`;
   return html;
 }
 function renderRelationNodeModal(){
