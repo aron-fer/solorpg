@@ -50,8 +50,10 @@ function addMapNodeAt(x, y, brush){
   if(!cur) return;
   const idx = cur.nodes.length;
   const snapped = snapToMapGrid(cur, x, y);
-  const t = brush && TERRAIN_BY_ID[brush];
-  const s = brush && brush.startsWith('set:') && SETTLEMENT_BY_ID[brush.slice(4)];
+  // Terrain/settlement tiles exist on hex maps only.
+  const hex = cur.grid==='hex';
+  const t = hex && brush && TERRAIN_BY_ID[brush];
+  const s = hex && brush && brush.startsWith('set:') && SETTLEMENT_BY_ID[brush.slice(4)];
   const def = t || s;
   const area = (ui.mapAreaBrush||'').trim();
   const node = {id:uid(), name: def ? def.label : (area || 'Raum '+(idx+1)), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
@@ -128,7 +130,7 @@ function applyBrushesToNode(id){
   const area = (ui.mapAreaBrush||'').trim();
   updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>{
     if(n.id!==id) return n;
-    const painted = applyBrushToNode(n, ui.mapBrush);
+    const painted = m.grid==='hex' ? applyBrushToNode(n, ui.mapBrush) : n;
     return area ? {...painted, area} : painted;
   })}));
   saveState(); render();
@@ -288,9 +290,8 @@ function mapNodeMarkup(cur, n){
   const hexMode = cur.grid==='hex';
   const r = mapNodeRadius(cur, n);
   const tileFill = terrainFill(n.terrain) || terrainFill(n.settlement);
-  const tile = hexMode
-    ? hexTileUseSvg(n.terrain, n.settlement, n.x, n.y, r, TERRAIN_INK, 1)
-    : mapTileSvg(n.terrain, n.settlement, n.x, n.y, r, false, TERRAIN_INK, 1);
+  // Tiles only on hex maps; elsewhere terrain data is kept but not shown.
+  const tile = hexMode ? hexTileUseSvg(n.terrain, n.settlement, n.x, n.y, r, TERRAIN_INK, 1) : '';
   const shape = tile || (hexMode
     ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="var(--panel-raised)" stroke="var(--border)" stroke-width="2"></polygon>`
     : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="var(--panel-raised)" stroke="var(--border)" stroke-width="2"></circle>`);
@@ -494,10 +495,10 @@ function renderMapTab(){
       </div>
       ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" style="width:100px;">` : ''}
     </div>
-    <div style="display:flex;flex-direction:column;gap:4px;">
+    ${cur.grid==='hex' ? `<div style="display:flex;flex-direction:column;gap:4px;">
       <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '') : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
       ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
-    </div>
+    </div>` : ''}
     <div style="display:flex;flex-direction:column;gap:4px;">
       <span class="small-muted">Gebiet-Pinsel (Begegnungstabelle, z.B. New Pictland) — solange ausgefüllt, bekommt jedes angetippte Feld dieses Gebiet. Leeren = aus.</span>
       <div class="row" style="gap:6px;">
@@ -553,7 +554,7 @@ function renderMapTab(){
           <span class="small-muted">Verbindungen</span>
           ${connectedEdges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
         </div>
-        ${(n.terrain || n.settlement || n.area) ? `<span class="small-muted">${escapeHtml([terrainContextLabel({terrain:n.terrain, settlement:n.settlement}), n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
+        ${((cur.grid==='hex' && (n.terrain || n.settlement)) || n.area) ? `<span class="small-muted">${escapeHtml([cur.grid==='hex' ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : null, n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
         ${n.area && findTableByName(n.area)
           ? `<button class="btn btn-gold" onclick="travelAndEncounter('${n.id}')">📍 Hierher reisen + 🎲 Begegnung</button>
              <button class="btn btn-raised" onclick="setMarkerHere('${n.id}')">📍 Nur Marker hierher</button>`
@@ -600,10 +601,10 @@ function renderMapNodeModal(){
       <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="Name des Raums" style="flex:1;">
     </div>
     <textarea rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
-    <span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
+    ${hexMode ? `<span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
     ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
     <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
-    ${renderSettlementChoice(d.settlement)}
+    ${renderSettlementChoice(d.settlement)}` : ''}
     <span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
     <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Gebiet…">
     ${areaDatalistHtml()}

@@ -258,7 +258,8 @@ function currentTerrainContext(ignoreOverride){
   if(ov) return {...ov, node:null, source:'manual'};
   const map = getCurrentMap();
   const node = map && map.markerNodeId ? map.nodes.find(n=>n.id===map.markerNodeId) : null;
-  if(!node || !(node.terrain || node.settlement)) return node ? {terrain:null, settlement:null, node, source:'map'} : null;
+  // Terrain only counts on hex maps (square/no-grid maps are dungeons etc.).
+  if(!node || map.grid!=='hex' || !(node.terrain || node.settlement)) return node ? {terrain:null, settlement:null, node, source:'map'} : null;
   let coastal = false;
   if(map.grid==='hex'){
     // Any neighbouring hex (within ~1 cell) that is ocean makes it coastal.
