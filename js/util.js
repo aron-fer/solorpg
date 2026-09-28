@@ -331,7 +331,7 @@ function parseJSONImport(raw){
 // the container scrolls natively (one finger / scrollbar). Pinch (touch),
 // Ctrl+wheel / trackpad pinch (desktop) and −/100%/+ buttons change it.
 // Zoom and scroll position survive re-renders (see restoreZoomViews).
-const ZOOM_MIN = 1;
+const ZOOM_MIN = 0.2; // below 1 the drawing gets narrower than the panel (centred)
 const zoomViews = {};
 function zoomView(key, maxZoom){
   if(!zoomViews[key]) zoomViews[key] = {z:1, x:0, y:0, max:maxZoom||4};
@@ -344,7 +344,8 @@ function applyZoom(key, z, anchorX, anchorY){
   if(!wrap) return;
   const v = zoomView(key);
   const svg = wrap.querySelector('svg');
-  z = Math.max(ZOOM_MIN, Math.min(v.max, z));
+  // Can always zoom out far enough to see the whole drawing (tall maps need < 20%).
+  z = Math.max(Math.min(ZOOM_MIN, fitZoom(key)), Math.min(v.max, z));
   const rect = wrap.getBoundingClientRect();
   const ax = anchorX==null ? rect.width/2 : anchorX-rect.left;
   const ay = anchorY==null ? rect.height/2 : anchorY-rect.top;
@@ -359,6 +360,17 @@ function applyZoom(key, z, anchorX, anchorY){
   if(lbl) lbl.textContent = Math.round(z*100)+'%';
 }
 function zoomBy(key, f){ applyZoom(key, zoomView(key).z*f); }
+// Zoom that shows the whole drawing (fits width AND height of the panel).
+function fitZoom(key){
+  const wrap = document.getElementById(key+'-wrap');
+  const svg = wrap && wrap.querySelector('svg');
+  if(!svg) return 1;
+  const vb = svg.viewBox.baseVal;
+  if(!vb || !vb.width) return 1;
+  const cw = wrap.clientWidth, ch = wrap.clientHeight;
+  // A hair smaller than exact, so rounding doesn't leave a pointless scrollbar.
+  return Math.max(0.05, Math.min(1, ch / (cw * vb.height / vb.width) * 0.99));
+}
 function onZoomWheel(e, key){
   if(!e.ctrlKey) return; // plain wheel scrolls as usual
   e.preventDefault();
@@ -382,14 +394,17 @@ function onZoomTouchMove(e, key){
 function onZoomTouchEnd(e){ if(e.touches.length<2) zoomPinch = null; }
 function onZoomScroll(el, key){ const v = zoomView(key); v.x = el.scrollLeft; v.y = el.scrollTop; }
 // Attributes for the scroll container, and the −/100%/+ buttons.
-function zoomWrapAttrs(key){
-  return `id="${key}-wrap" onscroll="onZoomScroll(this,'${key}')" onwheel="onZoomWheel(event,'${key}')"
+// `aspect` (width / height of the drawing) fixes the container's shape, so
+// zooming in doesn't make the panel grow (it would otherwise expand from the
+// fitted drawing's height up to its max-height).
+function zoomWrapAttrs(key, aspect){
+  return `id="${key}-wrap" style="${aspect ? `aspect-ratio:${aspect};` : ''}" onscroll="onZoomScroll(this,'${key}')" onwheel="onZoomWheel(event,'${key}')"
     ontouchstart="onZoomTouchStart(event,'${key}')" ontouchmove="onZoomTouchMove(event,'${key}')" ontouchend="onZoomTouchEnd(event)" ontouchcancel="onZoomTouchEnd(event)"`;
 }
-function zoomSvgStyle(key){ return `width:${zoomView(key).z*100}%;max-width:none;height:auto;`; }
+function zoomSvgStyle(key){ return `width:${zoomView(key).z*100}%;max-width:none;height:auto;margin:0 auto;`; }
 function zoomControlsHtml(key, fitTitle){
   return `<button class="icon-btn raised" title="Verkleinern" onclick="zoomBy('${key}',1/1.4)">−</button>
-    <button class="icon-btn raised" title="${fitTitle||'Alles zeigen'}" onclick="applyZoom('${key}',1)"><span id="${key}-zoom-label" style="font-size:11px;font-family:ui-monospace,monospace;">${Math.round(zoomView(key).z*100)}%</span></button>
+    <button class="icon-btn raised" title="${fitTitle||'Alles zeigen'}" onclick="applyZoom('${key}',fitZoom('${key}'))"><span id="${key}-zoom-label" style="font-size:11px;font-family:ui-monospace,monospace;">${Math.round(zoomView(key).z*100)}%</span></button>
     <button class="icon-btn raised" title="Vergrößern" onclick="zoomBy('${key}',1.4)">+</button>`;
 }
 // render() replaces the DOM; put every zoomed view back where it was.

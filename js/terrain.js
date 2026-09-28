@@ -127,29 +127,33 @@ function loadTerrainImages(){
   if(storageBackend!=='idb') return Promise.resolve();
   return idbGet('terrainImages').then(v=>{ TERRAIN_IMAGES = v || {}; }).catch(()=>{});
 }
-function triggerTerrainImagesImport(){
-  const input = document.createElement('input');
-  input.type = 'file'; input.accept = 'application/json,.json';
-  input.onchange = () => {
-    const file = input.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try{
-        const data = JSON.parse(reader.result);
-        const tiles = data && data.format==='solorpg-terrain-images' ? data.tiles : null;
-        if(!tiles || typeof tiles!=='object') throw new Error('keine Gelände-Grafik-Datei');
-        const clean = {};
-        Object.entries(tiles).forEach(([k,v])=>{ if(typeof v==='string' && v.startsWith('data:image/')) clean[k]=v; });
-        idbPut('terrainImages', clean).then(()=>{
-          TERRAIN_IMAGES = clean; render();
-          alert(Object.keys(clean).length+' Gelände-Grafiken importiert.');
-        }, e=>alert('Speichern fehlgeschlagen: '+(e.message||e)));
-      }catch(e){ alert('Import fehlgeschlagen: '+(e.message||e)); }
-    };
-    reader.readAsText(file);
+// Uses the permanent hidden <input id="file-import-terrain"> (like the other
+// imports): a file input created on the fly and not in the page can be
+// garbage-collected by mobile browsers while the file dialog is open — then
+// the choice is silently lost.
+function triggerTerrainImagesImport(){ document.getElementById('file-import-terrain').click(); }
+function handleTerrainImagesFile(input){
+  const file = input.files[0];
+  input.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = JSON.parse(reader.result);
+      const tiles = data && data.format==='solorpg-terrain-images' ? data.tiles : null;
+      if(!tiles || typeof tiles!=='object') throw new Error('keine Gelände-Grafik-Datei (erwartet: atlas-terrain-tiles.json)');
+      const clean = {};
+      Object.entries(tiles).forEach(([k,v])=>{ if(typeof v==='string' && v.startsWith('data:image/')) clean[k]=v; });
+      if(!Object.keys(clean).length) throw new Error('keine Grafiken in der Datei');
+      if(storageBackend!=='idb') throw new Error('dieser Browser erlaubt keinen IndexedDB-Speicher (z.B. privates Fenster)');
+      idbPut('terrainImages', clean).then(()=>{
+        TERRAIN_IMAGES = clean; render();
+        alert(Object.keys(clean).length+' Gelände-Grafiken importiert.');
+      }, e=>alert('Speichern fehlgeschlagen: '+(e.message||e)));
+    }catch(e){ alert('Import fehlgeschlagen: '+(e.message||e)); }
   };
-  input.click();
+  reader.onerror = () => alert('Datei konnte nicht gelesen werden.');
+  reader.readAsText(file);
 }
 function removeTerrainImages(){
   idbPut('terrainImages', {}).then(()=>{ TERRAIN_IMAGES = {}; render(); });
@@ -247,6 +251,9 @@ function parseTerrainOverride(v){
 // or null.
 function currentTerrainContext(ignoreOverride){
   const active = getActive();
+  // '__fixed': location-dependent rolls switched off → {{@terrain: X | Fallback}}
+  // always uses its fallback (the table's own fixed terrain).
+  if(!ignoreOverride && active.terrainOverride==='__fixed') return null;
   const ov = ignoreOverride ? null : parseTerrainOverride(active.terrainOverride);
   if(ov) return {...ov, node:null, source:'manual'};
   const map = getCurrentMap();

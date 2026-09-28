@@ -292,7 +292,33 @@ function toggleTableSelected(id){
 }
 function confirmDeleteSelectedTables(){ ui.confirmBulkDeleteTables=true; render(); }
 function cancelDeleteSelectedTables(){ ui.confirmBulkDeleteTables=false; render(); }
+// Select / deselect every table of a group at once (select mode).
+function toggleGroupSelected(group){
+  const ids = getActive().tables.filter(t=>t.group===group).map(t=>t.id);
+  const allSelected = ids.every(id=>ui.selectedTableIds.includes(id));
+  ui.selectedTableIds = allSelected
+    ? ui.selectedTableIds.filter(id=>!ids.includes(id))
+    : [...new Set([...ui.selectedTableIds, ...ids])];
+  render();
+}
+// Delete a whole group (manage mode), with an inline confirmation.
+function askDeleteTableGroup(group){ ui.confirmDeleteTableGroup = group; render(); }
+function cancelDeleteTableGroup(){ ui.confirmDeleteTableGroup = null; render(); }
+function deleteTableGroup(group){
+  backupNow('Vor Löschen der Tabellengruppe „'+group+'“');
+  const ids = new Set(getActive().tables.filter(t=>t.group===group).map(t=>t.id));
+  updateActive(camp=>({
+    ...camp,
+    tables: camp.tables.filter(t=>!ids.has(t.id)),
+    combos: camp.combos.map(c=>({...c, tableIds:c.tableIds.filter(tid=>!ids.has(tid))})),
+    groupOrder: camp.groupOrder.filter(g=>g!==group),
+  }));
+  ui.confirmDeleteTableGroup = null;
+  ui.selectedTableIds = ui.selectedTableIds.filter(id=>!ids.has(id));
+  saveState(); render();
+}
 function deleteSelectedTables(){
+  backupNow('Vor Löschen von '+ui.selectedTableIds.length+' Tabellen');
   const ids = new Set(ui.selectedTableIds);
   updateActive(camp=>({
     ...camp,
@@ -528,21 +554,36 @@ function rollAreaEncounter(){
   if(!table) return;
   handleRollTable(table.id);
 }
+// Does any table use {{@terrain: …}}? Cached per campaign state.
+const terrainRefCache = new WeakMap();
+function tablesUseTerrainRefs(active){
+  if(!terrainRefCache.has(active)){
+    terrainRefCache.set(active, active.tables.some(t=>
+      (t.entries||[]).some(e=>(e.text||'').includes('{{@terrain')) ||
+      (t.aspects||[]).some(a=>(a.options||[]).some(e=>(e.text||'').includes('{{@terrain')))));
+  }
+  return terrainRefCache.get(active);
+}
+// Only shown when it matters: some table uses {{@terrain: …}}, or the 📍 hex
+// has an area to roll. Nothing location-dependent otherwise.
 function renderPositionPanel(){
   const active = getActive();
   const ov = active.terrainOverride || '';
   const mapCtx = currentTerrainContext(true);
+  const usesTerrain = tablesUseTerrainRefs(active);
+  if(!usesTerrain && !findAreaTable(mapCtx && mapCtx.node)) return '';
   const autoLabel = mapCtx && mapCtx.node
     ? `Karte: Feld ${mapCtx.node.num}${terrainContextLabel(mapCtx) ? ' · '+terrainContextLabel(mapCtx) : ' · (kein Gelände)'}`
     : 'Karte: kein 📍 Marker gesetzt';
   const opt = (v, label) => `<option value="${v}" ${ov===v?'selected':''}>${escapeHtml(label)}</option>`;
   const options = opt('', 'Automatisch — '+autoLabel)
+    + opt('__fixed', 'Aus — feste Gelände der Tabellen (nicht ortsabhängig)')
     + `<optgroup label="Gelände">${TERRAINS.map(t=>opt(t.id, t.label)).join('')}</optgroup>`
     + `<optgroup label="Siedlung">${SETTLEMENTS.map(s=>opt(s.id, s.label)+opt(s.id+':coastal', s.label+' (Coastal)')+opt(s.id+':desert', s.label+' (Desert)')).join('')}</optgroup>`;
   const areaTable = findAreaTable(mapCtx && mapCtx.node);
   return `<div class="panel">
     <span class="label">🧭 Position</span>
-    <select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>
+    ${usesTerrain ? `<select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>` : ''}
     ${areaTable
       ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">🎲 Begegnung: ${escapeHtml(areaTable.name)}</button>`
       : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes. Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.</p>`}
@@ -604,17 +645,29 @@ function renderDiceTab(){
     html += groupNames.map((g,gIdx)=>{
       const members = active.tables.filter(t=>t.group===g);
       const collapsed = !!active.collapsedGroups[g];
+      const nSel = members.filter(t=>ui.selectedTableIds.includes(t.id)).length;
+      const groupCheck = ui.tableSelectMode
+        ? `<input type="checkbox" ${nSel===members.length?'checked':''} title="Alle ${members.length} Tabellen dieser Gruppe auswählen" onchange="toggleGroupSelected(${jsStr(g)})" style="width:20px;height:20px;flex-shrink:0;">`
+        : '';
+      const confirming = ui.confirmDeleteTableGroup===g;
       return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
-        <div class="row between">
+        <div class="row between" style="gap:8px;">
+          ${groupCheck}
           <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:6px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
             <span class="label" style="color:var(--gold);">${collapsed?'▶':'▼'} ${escapeHtml(g)}</span>
-            <span class="small-muted">${members.length}</span>
+            <span class="small-muted">${ui.tableSelectMode && nSel ? nSel+' / ' : ''}${members.length}</span>
           </button>
-          ${ui.managing ? `<div class="row" style="gap:4px;">
+          ${ui.managing && !ui.tableSelectMode ? `<div class="row" style="gap:4px;">
             <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup(${jsStr(g)},-1)">↑</button>
             <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup(${jsStr(g)},1)">↓</button>
+            <button class="icon-btn raised" style="color:var(--wax);" title="Ganze Gruppe löschen" onclick="askDeleteTableGroup(${jsStr(g)})">🗑</button>
           </div>` : ''}
         </div>
+        ${confirming ? `<div class="row wrap" style="gap:6px;padding:4px 0 6px;">
+          <span class="small-muted" style="flex:1;min-width:160px;">Alle ${members.length} Tabellen in „${escapeHtml(g)}“ löschen? (Vorher wird automatisch gesichert.)</span>
+          <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteTableGroup(${jsStr(g)})">Gruppe löschen</button>
+          <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteTableGroup()">Abbrechen</button>
+        </div>` : ''}
         ${collapsed ? '' : members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}
       </div>`;
     }).join('');

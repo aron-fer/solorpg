@@ -396,13 +396,19 @@ function mountMapSvg(){
   const layer = id => svg.querySelector('#'+id);
 
   // Size (fits all rooms) and zoom.
+  // On a grid, leave three free cells around the rooms so new ones can be
+  // tapped in at the edges too.
+  const pad = cur.grid==='none' ? 30 : cur.gridSize*3;
   let W = 320, H = 220;
-  cur.nodes.forEach(n=>{ const r = mapNodeRadius(cur, n); if(n.x+r+30>W) W = n.x+r+30; if(n.y+r+30>H) H = n.y+r+30; });
+  cur.nodes.forEach(n=>{ const r = mapNodeRadius(cur, n); if(n.x+r+pad>W) W = n.x+r+pad; if(n.y+r+pad>H) H = n.y+r+pad; });
   const topMargin = 30;
   const setAttr = (k, v) => { v = String(v); if(svg.getAttribute(k)!==v) svg.setAttribute(k, v); };
   setAttr('viewBox', `0 ${-topMargin} ${W} ${H+topMargin}`);
   setAttr('width', W); setAttr('height', H+topMargin);
   setAttr('style', zoomSvgStyle('map'));
+  // Fixed container shape = map proportions, so zooming doesn't grow the panel.
+  const aspect = `${W} / ${H+topMargin}`;
+  if(wrap.style.aspectRatio!==aspect) wrap.style.aspectRatio = aspect;
 
   const gridKey = `${cur.grid}|${cur.gridSize}|${W}|${H}`;
   if(mapDom.gridKey!==gridKey){ layer('map-grid').innerHTML = gridPatternSvg(cur.grid, W, H, cur.gridSize, 'map'); mapDom.gridKey = gridKey; }

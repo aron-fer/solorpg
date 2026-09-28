@@ -153,7 +153,7 @@ let ui = {
   activeTab:'notes', managing:false, confirmClear:{oracle:false, battle:false},
   formulaOracle:'', formulaBattle:'',
   editingTableId:null, tableDraft:null,
-  tableSelectMode:false, selectedTableIds:[], confirmBulkDeleteTables:false, bulkGroupChoice:'', bulkGroupNewName:'',
+  tableSelectMode:false, selectedTableIds:[], confirmBulkDeleteTables:false, confirmDeleteTableGroup:null, bulkGroupChoice:'', bulkGroupNewName:'',
   editingComboId:null, comboDraft:null,
   editingKarteiEntry:null, karteiEntryDraft:null,
   editingKarteiId:null, karteiNameDraft:'',

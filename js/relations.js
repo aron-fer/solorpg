@@ -618,7 +618,7 @@ function renderRelationsTab(){
        <button class="icon-btn raised" title="Auswahl aufheben" onclick="cancelRelationSelection()">✕</button>`
     : `<span class="small-muted" style="min-width:0;">Person antippen, um eine Beziehung zu ziehen</span>`;
   html += `<div class="panel" style="padding:6px;gap:6px;">
-    <div class="map-svg-wrap" ${zoomWrapAttrs('rel')}>
+    <div class="map-svg-wrap" ${zoomWrapAttrs('rel', '1 / 1')}>
       <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="${zoomSvgStyle('rel')}" onclick="cancelRelationSelection()">
         <defs>
           <marker id="rel-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">

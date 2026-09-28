@@ -1,6 +1,7 @@
 // Boot: load state, wire events, first render, service worker. Must load last.
 document.getElementById('file-import').addEventListener('change', function(){ handleImportFile(this); });
 document.getElementById('file-import-tables').addEventListener('change', function(){ handleTableImportFile(this); });
+document.getElementById('file-import-terrain').addEventListener('change', function(){ handleTerrainImagesFile(this); });
 let resizeIsWide = window.innerWidth>=900;
 window.addEventListener('resize', function(){
   if(!stateLoaded) return;
