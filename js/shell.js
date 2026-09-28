@@ -52,7 +52,7 @@ function moveOracleDie(id, dir, field){
   });
   saveState(); render();
 }
-function openOptions(){ ui.showOptions=true; render(); }
+function openOptions(){ ui.showOptions=true; ui.confirmRestoreBackupId=null; render(); refreshBackups(); refreshStorageInfo(); }
 function closeOptions(){ ui.showOptions=false; render(); }
 
 // ---- Campaigns ----
@@ -79,6 +79,7 @@ function saveCampaignName(){
 }
 function deleteCampaign(id){
   if(STATE.campaigns.length<=1) return;
+  backupNow('Vor Löschen einer Kampagne');
   STATE.campaigns = STATE.campaigns.filter(c=>c.id!==id);
   delete STATE.campaignData[id];
   if(STATE.activeCampaignId===id) STATE.activeCampaignId = STATE.campaigns[0].id;
@@ -107,6 +108,7 @@ function handleImportFile(input){
   reader.onload = () => {
     try{
       const parsed = JSON.parse(reader.result);
+      if(parsed.campaigns || parsed.data) backupNow('Vor Kampagnen-Import');
       if(parsed.campaigns && parsed.campaignData){
         const idMap = {};
         const newCampaigns = parsed.campaigns.map(c=>{ const newId=uid(); idMap[c.id]=newId; return {id:newId, name:c.name}; });
@@ -329,11 +331,43 @@ function renderOptionsModal(){
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <span class="label">💾 Speicher</span>
-        <p class="small-muted">Belegt: ${formatBytes(lastSavedBytes)} von ca. 5 MB (Browser-Limit, alle Kampagnen zusammen).
-          ${storagePersisted===true ? 'Dauerhafter Speicher ist aktiv.' : storagePersisted===false ? 'Der Browser darf die Daten bei Speicherknappheit löschen — regelmäßig exportieren!' : ''}</p>
+        ${renderStorageSection()}
       </div>
     </div>
   </div></div>`;
+}
+
+function renderStorageSection(){
+  const persistNote = storagePersisted===true ? 'Dauerhafter Speicher ist aktiv.'
+    : storagePersisted===false ? 'Der Browser darf die Daten bei Speicherknappheit löschen — regelmäßig exportieren!' : '';
+  if(storageBackend!=='idb'){
+    return `<p class="small-muted">Daten: ${formatBytes(lastSavedBytes)} von ca. 5 MB (localStorage — IndexedDB ist in diesem Browser nicht verfügbar, daher keine automatischen Sicherungen). ${persistNote}</p>`;
+  }
+  const quota = storageEstimate && storageEstimate.quota
+    ? ` · Browser-Speicher: ${formatBytes(storageEstimate.usage||0)} von ${formatBytes(storageEstimate.quota)} belegt (inkl. Sicherungen)` : '';
+  let list;
+  if(ui.backups===null) list = `<p class="small-muted">Lade Sicherungen…</p>`;
+  else if(!ui.backups.length) list = `<p class="small-muted">Noch keine Sicherungen.</p>`;
+  else list = ui.backups.map(b=>{
+    const when = new Date(b.time).toLocaleString('de-DE', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+    const confirming = ui.confirmRestoreBackupId===b.id;
+    return `<div class="list-item-row" style="flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+        <span style="font-size:13px;">${when} · ${escapeHtml(b.reason)}</span>
+        <span class="small-muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${formatBytes(b.bytes)} · ${escapeHtml(b.names||'')}</span>
+      </div>
+      ${confirming
+        ? `<button class="btn" style="background:var(--wax);color:var(--text);padding:4px 8px;font-size:12px;" onclick="restoreBackup(${b.id})">Ersetzen</button>
+           <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="cancelRestoreBackup()">Abbrechen</button>`
+        : `<button class="icon-btn raised" title="Wiederherstellen" onclick="askRestoreBackup(${b.id})">↺</button>
+           <button class="icon-btn raised" title="Herunterladen" onclick="downloadBackup(${b.id})">⬇</button>`}
+    </div>`;
+  }).join('');
+  return `<p class="small-muted">Daten: ${formatBytes(lastSavedBytes)}${quota}. ${persistNote}</p>
+    <p class="small-muted">Sicherungen (automatisch bei App-Start, alle 10 Minuten und vor Importen/Löschen; die letzten ${BACKUP_KEEP} bleiben). Wiederherstellen ersetzt <b>alle</b> Kampagnen — der aktuelle Stand wird vorher selbst gesichert.</p>
+    ${ui.confirmRestoreBackupId ? `<p class="small-muted" style="color:var(--wax);">Wirklich alle Kampagnen durch diese Sicherung ersetzen?</p>` : ''}
+    ${list}
+    <button class="btn btn-raised" onclick="manualBackup()">💾 Jetzt sichern</button>`;
 }
 
 function renderCampaignSwitcherModal(){

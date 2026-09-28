@@ -333,6 +333,7 @@ function runImport(){
   const result = parseJSONImport(ui.importText);
   if(result.error){ alert(result.error); return; }
   if(!result.tables.length && !result.karteien.length && !result.characters.length) return;
+  backupNow('Vor Tabellen-Import');
   updateActive(camp=>{
     const tables = [...camp.tables];
     result.tables.forEach(({name, group, mode, distMode, formula, entries, aspects})=>{
@@ -539,13 +540,13 @@ function renderDiceTab(){
       const collapsed = !!active.collapsedGroups[g];
       return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
         <div class="row between">
-          <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:6px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup('${escapeHtml(g).replace(/'/g,"\\'")}')">
+          <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:6px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
             <span class="label" style="color:var(--gold);">${collapsed?'▶':'▼'} ${escapeHtml(g)}</span>
             <span class="small-muted">${members.length}</span>
           </button>
           ${ui.managing ? `<div class="row" style="gap:4px;">
-            <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup('${escapeHtml(g).replace(/'/g,"\\'")}',-1)">↑</button>
-            <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup('${escapeHtml(g).replace(/'/g,"\\'")}',1)">↓</button>
+            <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup(${jsStr(g)},-1)">↑</button>
+            <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup(${jsStr(g)},1)">↓</button>
           </div>` : ''}
         </div>
         ${collapsed ? '' : members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}

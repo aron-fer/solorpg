@@ -155,52 +155,8 @@ let ui = {
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,
   editingRelationEdgeId:null, relationEdgeDraft:null,
+  backups:null, confirmRestoreBackupId:null,
 };
-
-
-function loadState(){
-  try{
-    let raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){ STATE = JSON.parse(raw); lastSavedBytes = raw.length*2; return; }
-    raw = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if(raw){
-      const parsed = JSON.parse(raw);
-      STATE = migrateLegacy(parsed);
-      return;
-    }
-  }catch(e){}
-  const id = uid();
-  STATE = { campaigns:[{id, name:'Kampagne 1'}], campaignData:{[id]: emptyCampaignData()}, activeCampaignId:id };
-}
-
-let saveTimeout=null;
-// Last save failure (quota exceeded, storage blocked, ...) — shown as a banner
-// so a full localStorage never silently swallows changes.
-let saveError=null;
-let lastSavedBytes=0;
-function saveState(){
-  if(saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(flushSave, 300);
-}
-function flushSave(){
-  if(saveTimeout){ clearTimeout(saveTimeout); saveTimeout=null; }
-  const hadError = !!saveError;
-  try{
-    const json = JSON.stringify(STATE);
-    localStorage.setItem(STORAGE_KEY, json);
-    lastSavedBytes = json.length*2; // localStorage counts UTF-16 code units
-    saveError = null;
-  }catch(e){
-    saveError = (e && (e.name==='QuotaExceededError' || e.code===22 || e.code===1014))
-      ? 'Speicher voll — Änderungen werden NICHT gespeichert. Bitte exportieren und alte Kampagnen/Logs löschen.'
-      : 'Speichern fehlgeschlagen ('+((e&&e.message)||e)+'). Bitte jetzt exportieren.';
-  }
-  if(hadError !== !!saveError) render();
-}
-// Don't lose the last debounced change when the app is closed/backgrounded.
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden' && saveTimeout) flushSave(); });
-window.addEventListener('pagehide', ()=>{ if(saveTimeout) flushSave(); });
-function formatBytes(n){ return n>=1048576 ? (n/1048576).toFixed(1)+' MB' : Math.round(n/1024)+' KB'; }
 
 // ensureCampaign() walks and copies the whole campaign (can be MBs), and
 // getActive() is called dozens of times per render. So normalize only when the

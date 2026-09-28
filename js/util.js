@@ -61,6 +61,9 @@ function defaultValueForType(type){
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// A string as a JS literal, safe inside a double-quoted inline handler:
+// onclick="fn(${jsStr(name)})". Handles quotes, apostrophes and backslashes.
+function jsStr(s){ return escapeHtml(JSON.stringify(String(s==null?'':s))); }
 // --- Shared graph/SVG helpers (used by Karte and Beziehungen) ---
 function pairKey(a,b){ return [a,b].sort().join('|'); }
 function labelBoxWidth(text){ return Math.max(30, String(text).length*5.6+12); }
