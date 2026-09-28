@@ -10,7 +10,7 @@ window.addEventListener('resize', function(){
     render();
   }
 });
-loadState().then(()=>{
+loadState().then(()=>loadTerrainImages()).then(()=>{
   startupBackup();
   render();
   requestPersistentStorage();

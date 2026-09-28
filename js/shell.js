@@ -331,6 +331,17 @@ function renderOptionsModal(){
         <button class="btn btn-raised" onclick="addOracleDie('battleDice')">+ Würfel hinzufügen</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="label">🗺️ Gelände-Grafiken</span>
+        ${Object.keys(TERRAIN_IMAGES).length
+          ? `<p class="small-muted" style="margin:0;">${Object.keys(TERRAIN_IMAGES).length} eigene Grafiken aktiv (nur auf diesem Gerät gespeichert, nicht auf der Webseite).</p>
+             <div class="row wrap" style="gap:8px;">
+               <button class="btn btn-raised" onclick="triggerTerrainImagesImport()">⬆ Andere Datei importieren</button>
+               <button class="btn btn-outline-wax" onclick="removeTerrainImages()">Entfernen (gezeichnete Symbole nutzen)</button>
+             </div>`
+          : `<p class="small-muted" style="margin:0;">Eigene Kacheln für Hex-Karten (z.B. aus dem Atlas). Die Datei bleibt auf diesem Gerät — sie wird nicht auf die Webseite hochgeladen. Ohne Import werden gezeichnete Symbole verwendet.</p>
+             <button class="btn btn-raised" style="align-self:flex-start;" onclick="triggerTerrainImagesImport()">⬆ Grafiken importieren (.json)</button>`}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
         <span class="label">💾 Speicher</span>
         ${renderStorageSection()}
       </div>

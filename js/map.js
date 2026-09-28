@@ -45,12 +45,16 @@ function addMapNode(){
   const idx = cur.nodes.length;
   addMapNodeAt(60+(idx%4)*80, 50+Math.floor(idx/4)*80);
 }
-function addMapNodeAt(x, y){
+function addMapNodeAt(x, y, brush){
   const cur = getCurrentMap();
   if(!cur) return;
   const idx = cur.nodes.length;
   const snapped = snapToMapGrid(cur, x, y);
-  const node = {id:uid(), name:'Raum '+(idx+1), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:''};
+  const t = brush && TERRAIN_BY_ID[brush];
+  const s = brush && brush.startsWith('set:') && SETTLEMENT_BY_ID[brush.slice(4)];
+  const def = t || s;
+  const node = {id:uid(), name: def ? def.label : 'Raum '+(idx+1), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
+    terrain: t ? brush : null, settlement: s ? s.id : null};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
   saveState(); render();
 }
@@ -89,11 +93,37 @@ function onMapGridSizeInput(el){
   saveState(); render();
 }
 function toggleMapConnectMode(){
-  ui.mapMoveArmedId = null;
+  ui.mapMoveArmedId = null; ui.mapBrush = null;
   ui.mapConnectFrom = (ui.mapConnectFrom==null) ? 'PENDING' : null;
   render();
 }
-function armMoveMapNode(id){ ui.mapConnectFrom=null; ui.mapMoveArmedId=id; render(); }
+// Brush (manage mode): tapping empty space creates a hex with it, tapping an
+// existing hex applies it. Values: a terrain id; 'set:city' / 'set:town'
+// (settlement on top of the terrain — applying the same one again removes
+// it); '__clear' (removes terrain and settlement).
+function setMapBrush(id){
+  ui.mapBrush = (ui.mapBrush===id) ? null : id;
+  ui.mapConnectFrom = null; ui.mapMoveArmedId = null;
+  render();
+}
+function paintMapNode(id, brush){
+  updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>{
+    if(n.id!==id) return n;
+    if(brush==='__clear') return {...n, terrain:null, settlement:null};
+    if(brush.startsWith('set:')){
+      const s = brush.slice(4);
+      return {...n, settlement: n.settlement===s ? null : s};
+    }
+    return {...n, terrain: brush};
+  })}));
+  saveState(); render();
+}
+function brushLabel(brush){
+  if(brush==='__clear') return 'Gelände & Siedlung entfernen';
+  if(brush.startsWith('set:')) return SETTLEMENT_BY_ID[brush.slice(4)].label;
+  return TERRAIN_BY_ID[brush].label;
+}
+function armMoveMapNode(id){ ui.mapConnectFrom=null; ui.mapBrush=null; ui.mapMoveArmedId=id; render(); }
 function cancelMoveMapNode(){ ui.mapMoveArmedId=null; render(); }
 function selectMapNode(id){
   if(ui.managing){
@@ -103,6 +133,7 @@ function selectMapNode(id){
       ui.mapConnectFrom=null; render(); return;
     }
     if(ui.mapMoveArmedId) return;
+    if(ui.mapBrush){ paintMapNode(id, ui.mapBrush); return; }
     startEditMapNode(id);
     return;
   }
@@ -130,7 +161,7 @@ function onMapCanvasClick(evt){
     ui.mapConnectFrom=null; render();
     return;
   }
-  addMapNodeAt(x, y);
+  addMapNodeAt(x, y, ui.mapBrush && ui.mapBrush!=='__clear' ? ui.mapBrush : null);
 }
 function setMarkerHere(nodeId){
   updateCurrentMap(m=>({...m, markerNodeId:nodeId}));
@@ -141,7 +172,7 @@ function startEditMapNode(id){
   const n = cur && cur.nodes.find(x=>x.id===id);
   if(!n) return;
   ui.editingMapNodeId = id;
-  ui.mapNodeDraft = {name:n.name, num:n.num, desc:n.desc, r:n.r};
+  ui.mapNodeDraft = {name:n.name, num:n.num, desc:n.desc, r:n.r, terrain:n.terrain||null, settlement:n.settlement||null};
   render();
 }
 function cancelMapNodeModal(){ ui.editingMapNodeId=null; ui.mapNodeDraft=null; render(); }
@@ -153,6 +184,8 @@ function saveMapNode(){
     num: (d.num!=null && String(d.num).trim()!=='') ? String(d.num).trim() : n.num,
     desc: d.desc,
     r: Math.max(10, Math.min(40, parseInt(d.r,10)||n.r)),
+    terrain: d.terrain || null,
+    settlement: d.settlement || null,
   }:n)}));
   ui.editingMapNodeId=null; ui.mapNodeDraft=null;
   saveState(); render();
@@ -235,6 +268,10 @@ function renderMapTab(){
       </div>
       ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" style="width:100px;">` : ''}
     </div>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '') : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
+      ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
+    </div>
     <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.</p>`;
     if(ui.mapMoveArmedId){
       html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um den Raum dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
@@ -298,11 +335,21 @@ function renderMapTab(){
     const isSelected = ui.selectedMapNodeId===n.id;
     const isMoveArmed = ui.mapMoveArmedId===n.id;
     const r = nodeR(n);
+    // Terrain/settlement tiles keep their look; selection/move then shows as
+    // a thick outline. Plain rooms keep the old filled style.
+    const tileFill = terrainFill(n.terrain) || terrainFill(n.settlement);
+    const tileStroke = isMoveArmed ? 'var(--wax)' : (isSelected ? 'var(--gold)' : TERRAIN_INK);
+    const tile = mapTileSvg(n.terrain, n.settlement, n.x, n.y, r, hexMode, tileStroke, isSelected||isMoveArmed ? 4 : 1);
     const fill = isSelected?'var(--gold-dim)':'var(--panel-raised)';
     const stroke = isMoveArmed?'var(--wax)':'var(--border)';
-    const shape = hexMode
+    const shape = tile || (hexMode
       ? `<polygon points="${hexCornersPoints(n.x,n.y,r)}" fill="${fill}" stroke="${stroke}" stroke-width="2"></polygon>`
-      : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"></circle>`;
+      : `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"></circle>`);
+    // On a tile the number moves to the lower edge with a halo, so the
+    // symbol stays visible.
+    const numText = tile
+      ? `<text x="${n.x}" y="${n.y + (hexMode ? r*0.8 : r*0.8)}" text-anchor="middle" font-size="${hexMode ? Math.max(8, r*0.28).toFixed(1) : 9}" font-weight="700" fill="${TERRAIN_INK}" stroke="${tileFill}" stroke-width="3" paint-order="stroke" style="pointer-events:none;">${escapeHtml(n.num)}</text>`
+      : `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.num)}</text>`;
     // Player-position marker: a small flag/pin above the room instead of a
     // ring around it, so it doesn't compete visually with the room's own
     // selection highlight and reads the same for circular and hex rooms.
@@ -320,7 +367,7 @@ function renderMapTab(){
     }
     return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">
       ${shape}
-      <text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)">${escapeHtml(n.num)}</text>
+      ${numText}
       ${pinMarker}
     </g>`;
   }).join('');
@@ -376,6 +423,30 @@ function renderMapTab(){
   }
   return html;
 }
+function setMapNodeDraftTerrain(id){ ui.mapNodeDraft.terrain = id==='__clear' ? null : id; render(); }
+function setMapNodeDraftSettlement(id){ ui.mapNodeDraft.settlement = (id==='__clear' || ui.mapNodeDraft.settlement===id) ? null : id; render(); }
+// Row of hex swatches; `current` is highlighted, clicking calls handler(id).
+// '__clear' = none. withSettlements adds City/Town brushes ('set:city', ...).
+function renderTerrainPalette(current, handler, withSettlements){
+  const swatch = (id, label, swatchId, on) => `<button title="${escapeHtml(label)}" onclick="${handler}('${id}')"
+      style="border-radius:8px;padding:2px;border:2px solid ${on?'var(--gold)':'transparent'};background:${on?'var(--panel-raised)':'transparent'};line-height:0;">
+      ${terrainSwatchSvg(swatchId, 34)}</button>`;
+  const items = [{id:'__clear', label: withSettlements ? 'Gelände & Siedlung entfernen' : 'Kein Gelände'}, ...TERRAINS];
+  let html = items.map(t=>swatch(t.id, t.label, t.id==='__clear' ? null : t.id, (current||'__clear')===t.id)).join('');
+  if(withSettlements){
+    html += `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
+      + SETTLEMENTS.map(s=>swatch('set:'+s.id, s.label+' (auf Gelände setzen)', s.id, current==='set:'+s.id)).join('');
+  }
+  return `<div class="row wrap" style="gap:4px;">${html}</div>`;
+}
+function renderSettlementChoice(current){
+  const opts = [{id:'__clear', label:'Keine'}, ...SETTLEMENTS];
+  return `<div class="row wrap" style="gap:4px;">${opts.map(s=>{
+    const on = (current||'__clear')===s.id;
+    return `<button onclick="setMapNodeDraftSettlement('${s.id}')" class="row" style="gap:6px;border-radius:8px;padding:2px 8px 2px 2px;border:2px solid ${on?'var(--gold)':'var(--border)'};background:${on?'var(--panel-raised)':'transparent'};color:var(--text);font-size:13px;">
+      ${terrainSwatchSvg(s.id==='__clear' ? null : s.id, 28)}${escapeHtml(s.label)}</button>`;
+  }).join('')}</div>`;
+}
 function renderMapNodeModal(){
   const d = ui.mapNodeDraft, id = ui.editingMapNodeId;
   const cur = getCurrentMap();
@@ -388,6 +459,10 @@ function renderMapNodeModal(){
       <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="Name des Raums" style="flex:1;">
     </div>
     <textarea rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
+    <span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
+    ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
+    <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
+    ${renderSettlementChoice(d.settlement)}
     ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jeder Raum immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
     <div class="row between">
       <span class="small-muted">Größe</span>
