@@ -6,7 +6,7 @@ function emptyCampaignData(){
     battleDice: [4,6,8,10,12,20,100].map(s=>({id:uid(), name:`W${s}`, formula:`1d${s}`})),
     battleLog: [],
     maps: [], activeMapId: null,
-    relationNodes: [], relationEdges: [],
+    relationMaps: [], activeRelationMapId: null,
     tabOrder: [], tabOverrides: {}, collapsedGroups: {}, groupOrder: [], splitView: false, pinnedTabs: [],
   };
 }
@@ -83,16 +83,28 @@ function ensureCampaign(data){
     })),
   }));
   if(!d.maps.some(m=>m.id===d.activeMapId)) d.activeMapId = d.maps[0] ? d.maps[0].id : null;
-  // Relations: a single faction/NPC relationship web per campaign. Layout is
-  // recomputed on the fly (a simple circle), so nodes carry no position.
-  d.relationNodes = (d.relationNodes||[]).map(n=>({id:n.id||uid(), name:n.name||'Unbenannt'}));
-  {
-    const validNodeIds = new Set(d.relationNodes.map(n=>n.id));
-    d.relationEdges = (d.relationEdges||[]).filter(e=>validNodeIds.has(e.from)&&validNodeIds.has(e.to)).map(e=>({
+  // Relations: one or more faction/NPC relationship webs per campaign (e.g. per
+  // region or scale). Older data had a single web at campaign level — it
+  // becomes the first web. Nodes carry no position: the layout is computed
+  // and then saved per web in `layout`.
+  // (Check the stored data, not d: emptyCampaignData() already put [] into d.)
+  if(!(data && Array.isArray(data.relationMaps))){
+    const legacyNodes = d.relationNodes||[], legacyEdges = d.relationEdges||[];
+    d.relationMaps = (legacyNodes.length || legacyEdges.length)
+      ? [{id:uid(), name:'Beziehungen', nodes:legacyNodes, edges:legacyEdges, layout:d.relationLayout||null}]
+      : [];
+  }
+  delete d.relationNodes; delete d.relationEdges; delete d.relationLayout;
+  d.relationMaps = d.relationMaps.map(m=>{
+    const nodes = (m.nodes||[]).map(n=>({id:n.id||uid(), name:n.name||'Unbenannt'}));
+    const validNodeIds = new Set(nodes.map(n=>n.id));
+    const edges = (m.edges||[]).filter(e=>validNodeIds.has(e.from)&&validNodeIds.has(e.to)).map(e=>({
       id: e.id||uid(), from:e.from, to:e.to,
       label: e.label||'kennt', weight: Math.max(1, Math.min(20, parseInt(e.weight,10)||10)),
     }));
-  }
+    return {id:m.id||uid(), name:m.name||'Beziehungen', nodes, edges, layout:m.layout||null};
+  });
+  if(!d.relationMaps.some(m=>m.id===d.activeRelationMapId)) d.activeRelationMapId = d.relationMaps[0] ? d.relationMaps[0].id : null;
   d.tables = (d.tables||[]).map(t=>({
     id: t.id, name: t.name, mode: t.mode || 'list',
     distMode: t.distMode || 'equal', formula: t.formula || '',
@@ -155,6 +167,7 @@ let ui = {
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,
   editingRelationEdgeId:null, relationEdgeDraft:null,
+  confirmDeleteRelationMapId:null, relZoom:1, relScroll:{x:0, y:0},
   backups:null, confirmRestoreBackupId:null,
 };
 

@@ -144,6 +144,7 @@ function render(){
   const active = getActive();
   const body = (active.splitView && window.innerWidth>=900) ? renderSplitView() : renderActiveTab();
   document.getElementById('main').innerHTML = renderHeader() + body + renderModals();
+  restoreRelationView();
 }
 
 function renderNav(isSidebar){
