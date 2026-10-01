@@ -65,7 +65,7 @@ function addMapNodeAt(x, y, brush, extra){
 }
 // ---- Play mode: generate rooms as you explore ----
 function addMapEdgeDirect(fromId, toId){
-  if(fromId===toId) return;
+  if(fromId===toId || getCurrentMap().grid==='hex') return;
   updateCurrentMap(m=>m.edges.some(e=>(e.from===fromId&&e.to===toId)||(e.from===toId&&e.to===fromId))
     ? m : {...m, edges:[...m.edges, {id:uid(), from:fromId, to:toId, type:'open', oneway:false}]});
 }
@@ -76,7 +76,8 @@ function addConnectedRoomAt(fromId, x, y){
   const from = cur.nodes.find(n=>n.id===fromId);
   if(!from) return;
   const id = addMapNodeAt(x, y, null, areasOn() && from.area ? {area:from.area, name: from.area} : null);
-  addMapEdgeDirect(fromId, id);
+  // Hex maps have no connections — neighbouring hexes are simply adjacent.
+  if(cur.grid!=='hex') addMapEdgeDirect(fromId, id);
   if(cur.markerNodeId===fromId) updateCurrentMap(m=>({...m, markerNodeId:id}));
   ui.selectedMapNodeId = id; ui.mapPlayConnect = false;
   saveState(); render();
@@ -106,6 +107,7 @@ function addConnectedRoomAuto(fromId){
 }
 function togglePlayConnect(){ ui.mapPlayConnect = !ui.mapPlayConnect; render(); }
 function setMapGridType(type){
+  ui.mapConnectFrom = null; ui.mapPlayConnect = false;
   // Switching to squares: put every room into a cell.
   updateCurrentMap(m=>({...m, grid:type, nodes: type==='square'
     ? m.nodes.map(n=>({...n, ...squareGridSnap(n.x, n.y, m.gridSize)}))
@@ -388,6 +390,8 @@ function mapOverlayMarkup(cur){
 // Visible connections and (manage mode) their tap targets.
 function mapEdgesMarkup(cur){
   const hexMode = cur.grid==='hex';
+  // Connections aren't used on hex maps (old ones stay stored, unshown).
+  if(hexMode) return {lines:'', hits:''};
   const geoms = curvedEdgeGeometry(cur.nodes, cur.edges, 18);
   // Touching hex cells leave zero line length between them — then a small
   // doorway marker on the shared wall stands in for the line.
@@ -548,7 +552,7 @@ function renderMapTab(){
     const connectLabel = ui.mapConnectFrom==='PENDING' ? '🔗 Ersten Raum tippen…' : (ui.mapConnectFrom ? '🔗 Zweiten Raum tippen…' : '🔗 Verbinden');
     html += `<div class="row wrap" style="gap:8px;">
       <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="addMapNode()">+ Raum</button>
-      <button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>
+      ${cur.grid!=='hex' ? `<button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>` : ''}
       <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="deleteMap('${cur.id}')">🗑 Karte löschen</button>
     </div>
     <div class="row wrap" style="gap:8px;align-items:center;">
@@ -581,7 +585,7 @@ function renderMapTab(){
   if(!ui.managing && (ui.selectedMapNodeId || ui.mapPlayConnect)){
     html += `<p class="small-muted" style="margin:0;">${ui.mapPlayConnect
       ? '🔗 Tippe den Raum, der verbunden werden soll (leere Stelle = abbrechen).'
-      : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.'}</p>`;
+      : (cur.grid==='hex' ? 'Leere Stelle tippen = neues Feld.' : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.')}</p>`;
   }
   html += `<div class="panel" id="map-panel" style="padding:6px;gap:6px;">
     <div class="map-svg-wrap" ${zoomWrapAttrs('map')}></div>
@@ -620,14 +624,16 @@ function renderMapTab(){
         </div>
         <input type="text" value="${escapeHtml(n.name)}" oninput="onSelectedMapNodeNameInput('${n.id}',this)" onblur="render()" placeholder="Name des Raums" style="font-weight:600;color:var(--gold);">
         <textarea rows="3" placeholder="Beschreibung, Fallen, Inhalt…" oninput="onSelectedMapNodeDescInput('${n.id}',this)" onblur="render()">${escapeHtml(n.desc)}</textarea>
-        <div style="display:flex;flex-direction:column;gap:4px;">
+        ${cur.grid==='hex'
+          ? `<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="addConnectedRoomAuto('${n.id}')">+ Nachbarfeld</button>`
+          : `<div style="display:flex;flex-direction:column;gap:4px;">
           <span class="small-muted">Verbindungen</span>
           ${connectedEdges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
           <div class="row wrap" style="gap:8px;">
             <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="addConnectedRoomAuto('${n.id}')">+ Anschlussraum</button>
             <button class="btn ${ui.mapPlayConnect?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="togglePlayConnect()">${ui.mapPlayConnect ? '🔗 Raum tippen…' : '🔗 Mit Raum verbinden'}</button>
           </div>
-        </div>
+        </div>`}
         ${((cur.grid==='hex' && (n.terrain || n.settlement)) || (areasOn() && n.area)) ? `<span class="small-muted">${escapeHtml([cur.grid==='hex' ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : null, areasOn() && n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
         ${areasOn() && n.area && findTableByName(n.area)
           ? `<button class="btn btn-gold" onclick="travelAndEncounter('${n.id}')">📍 Hierher reisen + 🎲 Begegnung</button>
