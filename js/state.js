@@ -92,6 +92,8 @@ function ensureCampaign(data){
   // Areas (encounter tables per hex) are optional; campaigns that already
   // use them keep them on.
   d.areasEnabled = (data && typeof data.areasEnabled==='boolean') ? data.areasEnabled : d.maps.some(m=>m.nodes.some(n=>n.area));
+  // Hex maps have no connections: drop any left over from older versions.
+  d.maps = d.maps.map(m=>m.grid==='hex' && m.edges.length ? {...m, edges:[]} : m);
   if(!d.maps.some(m=>m.id===d.activeMapId)) d.activeMapId = d.maps[0] ? d.maps[0].id : null;
   // Relations: one or more faction/NPC relationship webs per campaign (e.g. per
   // region or scale). Older data had a single web at campaign level — it

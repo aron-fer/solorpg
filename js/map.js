@@ -107,9 +107,12 @@ function addConnectedRoomAuto(fromId){
 }
 function togglePlayConnect(){ ui.mapPlayConnect = !ui.mapPlayConnect; render(); }
 function setMapGridType(type){
+  const cur = getCurrentMap();
+  if(type==='hex' && cur && cur.grid!=='hex' && cur.edges.length
+    && !confirm(`Hex-Karten haben keine Verbindungen — die ${cur.edges.length} Verbindung(en) dieser Karte werden gelöscht. Fortfahren?`)) return;
   ui.mapConnectFrom = null; ui.mapPlayConnect = false;
-  // Switching to squares: put every room into a cell.
-  updateCurrentMap(m=>({...m, grid:type, nodes: type==='square'
+  // Switching to squares: put every room into a cell. Hex: no connections.
+  updateCurrentMap(m=>({...m, grid:type, edges: type==='hex' ? [] : m.edges, nodes: type==='square'
     ? m.nodes.map(n=>({...n, ...squareGridSnap(n.x, n.y, m.gridSize)}))
     : m.nodes}));
   saveState(); render();
@@ -390,7 +393,7 @@ function mapOverlayMarkup(cur){
 // Visible connections and (manage mode) their tap targets.
 function mapEdgesMarkup(cur){
   const hexMode = cur.grid==='hex';
-  // Connections aren't used on hex maps (old ones stay stored, unshown).
+  // Connections aren't used on hex maps.
   if(hexMode) return {lines:'', hits:''};
   const geoms = curvedEdgeGeometry(cur.nodes, cur.edges, 18);
   // Touching hex cells leave zero line length between them — then a small
