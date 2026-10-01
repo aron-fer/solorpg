@@ -89,6 +89,9 @@ function ensureCampaign(data){
     const s = m.gridSize, h = s/2;
     return {...m, cellCentered:true, nodes: m.nodes.map(n=>(n.x%s===0 && n.y%s===0) ? {...n, x:n.x+h, y:n.y+h} : n)};
   });
+  // Areas (encounter tables per hex) are optional; campaigns that already
+  // use them keep them on.
+  d.areasEnabled = (data && typeof data.areasEnabled==='boolean') ? data.areasEnabled : d.maps.some(m=>m.nodes.some(n=>n.area));
   if(!d.maps.some(m=>m.id===d.activeMapId)) d.activeMapId = d.maps[0] ? d.maps[0].id : null;
   // Relations: one or more faction/NPC relationship webs per campaign (e.g. per
   // region or scale). Older data had a single web at campaign level — it

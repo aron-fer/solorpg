@@ -545,7 +545,7 @@ function setTerrainOverride(v){
   saveState(); render();
 }
 function findAreaTable(node){
-  return node && node.area ? findTableByName(node.area) : null;
+  return getActive().areasEnabled && node && node.area ? findTableByName(node.area) : null;
 }
 function rollAreaEncounter(){
   // The area always comes from the 📍 hex, even if the terrain is overridden.
@@ -586,7 +586,7 @@ function renderPositionPanel(){
     ${usesTerrain ? `<select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>` : ''}
     ${areaTable
       ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">🎲 Begegnung: ${escapeHtml(areaTable.name)}</button>`
-      : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes. Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.</p>`}
+      : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes.${active.areasEnabled ? ' Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.' : ''}</p>`}
   </div>`;
 }
 function renderDiceTab(){

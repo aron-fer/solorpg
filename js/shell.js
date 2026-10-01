@@ -53,6 +53,7 @@ function moveOracleDie(id, dir, field){
   saveState(); render();
 }
 function openOptions(){ ui.showOptions=true; ui.confirmRestoreBackupId=null; render(); refreshBackups(); refreshStorageInfo(); }
+function toggleAreasEnabled(){ updateActive(camp=>({...camp, areasEnabled:!camp.areasEnabled})); saveState(); render(); }
 function closeOptions(){ ui.showOptions=false; render(); }
 
 // ---- Campaigns ----
@@ -354,6 +355,13 @@ function renderOptionsModal(){
         <p class="small-muted">Eigene Würfel-Buttons und eigener Ergebnis-Verlauf für den Kampf-Tab, getrennt vom Orakel.</p>
         ${dieRows('battleDice')}
         <button class="btn btn-raised" onclick="addOracleDie('battleDice')">+ Würfel hinzufügen</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="label">🗺️ Karte</span>
+        <button class="row between" style="border-radius:10px;padding:10px 12px;background:${active.areasEnabled?'var(--panel-raised)':'transparent'};border:1px solid ${active.areasEnabled?'var(--gold)':'var(--border)'};color:var(--text);text-align:left;" onclick="toggleAreasEnabled()">
+          <span>Gebiete (Begegnungstabelle pro Feld, z.B. Hyperborea)</span>${active.areasEnabled?'<span style="color:var(--gold);">✓</span>':''}
+        </button>
+        <p class="small-muted" style="margin:0;">Aus: Gebiet-Pinsel, Gebiet-Feld und Begegnungs-Knöpfe sind ausgeblendet. Schon vergebene Gebiete bleiben gespeichert.</p>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <span class="label">🗺️ Gelände-Grafiken</span>

@@ -45,6 +45,7 @@ function addMapNode(){
   const idx = cur.nodes.length;
   addMapNodeAt(60+(idx%4)*80, 50+Math.floor(idx/4)*80);
 }
+function areasOn(){ return !!getActive().areasEnabled; }
 function addMapNodeAt(x, y, brush, extra){
   const cur = getCurrentMap();
   if(!cur) return;
@@ -55,7 +56,7 @@ function addMapNodeAt(x, y, brush, extra){
   const t = hex && brush && TERRAIN_BY_ID[brush];
   const s = hex && brush && brush.startsWith('set:') && SETTLEMENT_BY_ID[brush.slice(4)];
   const def = t || s;
-  const area = (ui.mapAreaBrush||'').trim();
+  const area = areasOn() ? (ui.mapAreaBrush||'').trim() : '';
   const node = {id:uid(), name: def ? def.label : (area || 'Raum '+(idx+1)), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
     terrain: t ? brush : null, settlement: s ? s.id : null, area, ...(extra||{})};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
@@ -74,7 +75,7 @@ function addConnectedRoomAt(fromId, x, y){
   const cur = getCurrentMap();
   const from = cur.nodes.find(n=>n.id===fromId);
   if(!from) return;
-  const id = addMapNodeAt(x, y, null, from.area ? {area:from.area, name: from.area} : null);
+  const id = addMapNodeAt(x, y, null, areasOn() && from.area ? {area:from.area, name: from.area} : null);
   addMapEdgeDirect(fromId, id);
   if(cur.markerNodeId===fromId) updateCurrentMap(m=>({...m, markerNodeId:id}));
   ui.selectedMapNodeId = id; ui.mapPlayConnect = false;
@@ -170,7 +171,7 @@ function paintMapNode(id, brush){
 }
 // Applies the terrain/settlement brush and the area brush (both optional).
 function applyBrushesToNode(id){
-  const area = (ui.mapAreaBrush||'').trim();
+  const area = areasOn() ? (ui.mapAreaBrush||'').trim() : '';
   updateCurrentMap(m=>({...m, nodes: m.nodes.map(n=>{
     if(n.id!==id) return n;
     const painted = m.grid==='hex' ? applyBrushToNode(n, ui.mapBrush) : n;
@@ -213,7 +214,7 @@ function selectMapNode(id){
       ui.mapConnectFrom=null; render(); return;
     }
     if(ui.mapMoveArmedId) return;
-    if(ui.mapBrush || (ui.mapAreaBrush||'').trim()){ applyBrushesToNode(id); return; }
+    if(ui.mapBrush || (areasOn() && (ui.mapAreaBrush||'').trim())){ applyBrushesToNode(id); return; }
     startEditMapNode(id);
     return;
   }
@@ -563,14 +564,14 @@ function renderMapTab(){
       <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '') : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
       ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
     </div>` : ''}
-    <div style="display:flex;flex-direction:column;gap:4px;">
+    ${areasOn() ? `<div style="display:flex;flex-direction:column;gap:4px;">
       <span class="small-muted">Gebiet-Pinsel (Begegnungstabelle, z.B. New Pictland) — solange ausgefüllt, bekommt jedes angetippte Feld dieses Gebiet. Leeren = aus.</span>
       <div class="row" style="gap:6px;">
         <input type="text" list="area-table-names" value="${escapeHtml(ui.mapAreaBrush||'')}" oninput="onMapAreaBrushInput(this)" onchange="render()" placeholder="Gebiet…" style="flex:1;">
         ${ui.mapAreaBrush ? `<button class="icon-btn raised" title="Gebiet-Pinsel aus" onclick="ui.mapAreaBrush=''; render();">✕</button>` : ''}
       </div>
       ${areaDatalistHtml()}
-    </div>
+    </div>` : ''}
     <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.</p>`;
     if(ui.mapMoveArmedId){
       html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um den Raum dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
@@ -627,11 +628,11 @@ function renderMapTab(){
             <button class="btn ${ui.mapPlayConnect?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="togglePlayConnect()">${ui.mapPlayConnect ? '🔗 Raum tippen…' : '🔗 Mit Raum verbinden'}</button>
           </div>
         </div>
-        ${((cur.grid==='hex' && (n.terrain || n.settlement)) || n.area) ? `<span class="small-muted">${escapeHtml([cur.grid==='hex' ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : null, n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
-        ${n.area && findTableByName(n.area)
+        ${((cur.grid==='hex' && (n.terrain || n.settlement)) || (areasOn() && n.area)) ? `<span class="small-muted">${escapeHtml([cur.grid==='hex' ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : null, areasOn() && n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
+        ${areasOn() && n.area && findTableByName(n.area)
           ? `<button class="btn btn-gold" onclick="travelAndEncounter('${n.id}')">📍 Hierher reisen + 🎲 Begegnung</button>
              <button class="btn btn-raised" onclick="setMarkerHere('${n.id}')">📍 Nur Marker hierher</button>`
-          : `${n.area ? `<p class="small-muted" style="margin:0;color:var(--wax);">Keine Tabelle „${escapeHtml(n.area)}“ gefunden.</p>` : ''}
+          : `${areasOn() && n.area ? `<p class="small-muted" style="margin:0;color:var(--wax);">Keine Tabelle „${escapeHtml(n.area)}“ gefunden.</p>` : ''}
              <button class="btn btn-gold" onclick="setMarkerHere('${n.id}')">📍 Marker hierher</button>`}
       </div>`;
     }
@@ -678,9 +679,9 @@ function renderMapNodeModal(){
     ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
     <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
     ${renderSettlementChoice(d.settlement)}` : ''}
-    <span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
+    ${areasOn() ? `<span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
     <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Gebiet…">
-    ${areaDatalistHtml()}
+    ${areaDatalistHtml()}` : ''}
     ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jeder Raum immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
     <div class="row between">
       <span class="small-muted">Größe</span>
