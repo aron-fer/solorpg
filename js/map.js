@@ -13,7 +13,7 @@ function updateCurrentMap(updater){
 }
 function setActiveMapId(id){
   updateActive(camp=>({...camp, activeMapId:id}));
-  ui.selectedMapNodeId=null; ui.mapMoveArmedId=null; ui.mapConnectFrom=null;
+  ui.selectedMapNodeId=null; ui.mapMoveArmedId=null; ui.mapConnectFrom=null; ui.mapPlayConnect=false;
   saveState(); render();
 }
 function addMap(){
@@ -45,7 +45,7 @@ function addMapNode(){
   const idx = cur.nodes.length;
   addMapNodeAt(60+(idx%4)*80, 50+Math.floor(idx/4)*80);
 }
-function addMapNodeAt(x, y, brush){
+function addMapNodeAt(x, y, brush, extra){
   const cur = getCurrentMap();
   if(!cur) return;
   const idx = cur.nodes.length;
@@ -57,10 +57,53 @@ function addMapNodeAt(x, y, brush){
   const def = t || s;
   const area = (ui.mapAreaBrush||'').trim();
   const node = {id:uid(), name: def ? def.label : (area || 'Raum '+(idx+1)), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
-    terrain: t ? brush : null, settlement: s ? s.id : null, area};
+    terrain: t ? brush : null, settlement: s ? s.id : null, area, ...(extra||{})};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
   saveState(); render();
+  return node.id;
 }
+// ---- Play mode: generate rooms as you explore ----
+function addMapEdgeDirect(fromId, toId){
+  if(fromId===toId) return;
+  updateCurrentMap(m=>m.edges.some(e=>(e.from===fromId&&e.to===toId)||(e.from===toId&&e.to===fromId))
+    ? m : {...m, edges:[...m.edges, {id:uid(), from:fromId, to:toId, type:'open', oneway:false}]});
+}
+// New room at (x,y), connected to `fromId`. It takes over the area of the
+// room it's reached from; the 📍 marker follows if the party stood there.
+function addConnectedRoomAt(fromId, x, y){
+  const cur = getCurrentMap();
+  const from = cur.nodes.find(n=>n.id===fromId);
+  if(!from) return;
+  const id = addMapNodeAt(x, y, null, from.area ? {area:from.area, name: from.area} : null);
+  addMapEdgeDirect(fromId, id);
+  if(cur.markerNodeId===fromId) updateCurrentMap(m=>({...m, markerNodeId:id}));
+  ui.selectedMapNodeId = id; ui.mapPlayConnect = false;
+  saveState(); render();
+}
+// Free spot next to a room: grid neighbours (hex / square) or a ring of
+// positions around it (no grid); preferring right, down, left, up.
+function freeNeighbourSpot(cur, n){
+  const s = cur.gridSize||40;
+  let cands;
+  if(cur.grid==='hex'){
+    const ax = hexPixelToAxial(n.x, n.y, s), a = hexRound(ax.q, ax.r);
+    cands = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]].map(([dq,dr])=>hexAxialToPixel(a.q+dq, a.r+dr, s));
+  } else {
+    const d = cur.grid==='square' ? s : 80;
+    cands = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]].map(([dx,dy])=>({x:n.x+dx*d, y:n.y+dy*d}));
+  }
+  const minDist = cur.grid==='none' ? 40 : s*0.8;
+  return cands.find(p=>p.x>0 && p.y>0 && !cur.nodes.some(o=>Math.hypot(o.x-p.x, o.y-p.y)<minDist)) || null;
+}
+function addConnectedRoomAuto(fromId){
+  const cur = getCurrentMap();
+  const from = cur && cur.nodes.find(n=>n.id===fromId);
+  if(!from) return;
+  const spot = freeNeighbourSpot(cur, from);
+  if(!spot){ alert('Kein freier Platz direkt daneben — tippe auf eine leere Stelle in der Karte.'); return; }
+  addConnectedRoomAt(fromId, spot.x, spot.y);
+}
+function togglePlayConnect(){ ui.mapPlayConnect = !ui.mapPlayConnect; render(); }
 function setMapGridType(type){
   // Switching to squares: put every room into a cell.
   updateCurrentMap(m=>({...m, grid:type, nodes: type==='square'
@@ -174,16 +217,30 @@ function selectMapNode(id){
     startEditMapNode(id);
     return;
   }
+  if(ui.mapPlayConnect && ui.selectedMapNodeId && ui.selectedMapNodeId!==id){
+    addMapEdgeDirect(ui.selectedMapNodeId, id);
+    ui.mapPlayConnect = false;
+    saveState(); render();
+    return;
+  }
+  ui.mapPlayConnect = false;
   ui.selectedMapNodeId = (ui.selectedMapNodeId===id) ? null : id;
   render();
 }
 function onMapCanvasClick(evt){
-  if(!ui.managing) return;
   const svg = evt.currentTarget;
   const rect = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
   const x = Math.round((evt.clientX-rect.left)/rect.width*vb.width + vb.x);
   const y = Math.round((evt.clientY-rect.top)/rect.height*vb.height + vb.y);
+  if(!ui.managing){
+    // Play mode: empty spot + selected room = new room connected to it.
+    const cur = getCurrentMap();
+    if(ui.mapPlayConnect){ ui.mapPlayConnect=false; render(); return; }
+    if(ui.selectedMapNodeId) addConnectedRoomAt(ui.selectedMapNodeId, x, y);
+    else if(cur && cur.nodes.length===0){ ui.selectedMapNodeId = addMapNodeAt(x, y); render(); }
+    return;
+  }
   if(ui.mapMoveArmedId){
     const id = ui.mapMoveArmedId;
     const cur = getCurrentMap();
@@ -474,10 +531,17 @@ function renderMapTab(){
     return html;
   }
 
-  html += `<div class="panel" style="gap:8px;">
-    <input type="text" value="${escapeHtml(cur.name)}" placeholder="Kartenname" oninput="onMapNameInput(this)">
-    <textarea rows="2" placeholder="Beschreibung der Karte…" oninput="onMapDescInput(this)">${escapeHtml(cur.description)}</textarea>
-  </div>`;
+  // Name and description are edited in edit mode only; while playing the
+  // name is in the pill above and the description folds away.
+  if(ui.managing){
+    html += `<div class="panel" style="gap:8px;">
+      <input type="text" value="${escapeHtml(cur.name)}" placeholder="Kartenname" oninput="onMapNameInput(this)">
+      <textarea rows="2" placeholder="Beschreibung der Karte…" oninput="onMapDescInput(this)">${escapeHtml(cur.description)}</textarea>
+    </div>`;
+  } else if((cur.description||'').trim()){
+    html += `<details class="small-muted" style="padding:0 4px;"><summary style="cursor:pointer;">Beschreibung</summary>
+      <div class="log-text" style="margin-top:4px;">${escapeHtml(cur.description)}</div></details>`;
+  }
 
   if(ui.managing){
     const connectLabel = ui.mapConnectFrom==='PENDING' ? '🔗 Ersten Raum tippen…' : (ui.mapConnectFrom ? '🔗 Zweiten Raum tippen…' : '🔗 Verbinden');
@@ -513,6 +577,11 @@ function renderMapTab(){
     }
   }
 
+  if(!ui.managing && (ui.selectedMapNodeId || ui.mapPlayConnect)){
+    html += `<p class="small-muted" style="margin:0;">${ui.mapPlayConnect
+      ? '🔗 Tippe den Raum, der verbunden werden soll (leere Stelle = abbrechen).'
+      : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.'}</p>`;
+  }
   html += `<div class="panel" id="map-panel" style="padding:6px;gap:6px;">
     <div class="map-svg-wrap" ${zoomWrapAttrs('map')}></div>
     <div class="row" style="gap:4px;justify-content:flex-end;">${zoomControlsHtml('map','Ganze Karte zeigen')}</div>
@@ -527,7 +596,7 @@ function renderMapTab(){
     </div>`;
   }
   if(cur.nodes.length===0){
-    html += `<p class="small-muted">${ui.managing ? 'Noch keine Räume — tippe oben auf „+ Raum".' : 'Noch keine Räume auf dieser Karte.'}</p>`;
+    html += `<p class="small-muted">${ui.managing ? 'Noch keine Räume — tippe oben auf „+ Raum".' : 'Noch keine Räume — tippe in die Karte, um den ersten anzulegen.'}</p>`;
   }
 
   if(!ui.managing && ui.selectedMapNodeId){
@@ -553,6 +622,10 @@ function renderMapTab(){
         <div style="display:flex;flex-direction:column;gap:4px;">
           <span class="small-muted">Verbindungen</span>
           ${connectedEdges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
+          <div class="row wrap" style="gap:8px;">
+            <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="addConnectedRoomAuto('${n.id}')">+ Anschlussraum</button>
+            <button class="btn ${ui.mapPlayConnect?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="togglePlayConnect()">${ui.mapPlayConnect ? '🔗 Raum tippen…' : '🔗 Mit Raum verbinden'}</button>
+          </div>
         </div>
         ${((cur.grid==='hex' && (n.terrain || n.settlement)) || n.area) ? `<span class="small-muted">${escapeHtml([cur.grid==='hex' ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : null, n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
         ${n.area && findTableByName(n.area)

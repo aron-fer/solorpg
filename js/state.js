@@ -166,7 +166,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   characterViewMode:'full',
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null,
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null,
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
