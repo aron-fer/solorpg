@@ -47,48 +47,61 @@ function pickEntry(entries, distMode, formula){
   }
   return {entry: entries[Math.floor(Math.random()*entries.length)], rollInfo:''};
 }
+// {{…}} can be nested; the innermost ones are resolved first, so
+// {{Attack {{Tomb|Tower}}|Find {{Ring|Skull}}}} works.
 function resolveInlineRefs(text, depth, visited){
   if(!text) return text;
-  return text.replace(/\{\{([^}]+)\}\}/g, (whole, name)=>{
-    if(depth>5) return '[zu tief verschachtelt]';
-    // {{75%}} → roll d100 against it: "75% [W100: 23 ✔]"
-    const pct = name.trim().match(/^(\d{1,3})\s*%$/);
-    if(pct){
-      const roll = rollDie(100);
-      return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
-    }
-    // {{2d6}} → "2d6→7" (unless a table has that name)
-    const diceF = !findTableByName(name) && parseFormula(name.trim());
-    if(diceF){
-      let sum = diceF.mod;
-      for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
-      return `${name.trim()}→${sum}`;
-    }
-    // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
-    // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
-    const tm = name.trim().match(/^@(?:terrain|gelände)\s*:\s*([^|]+?)\s*(?:\|\s*(.+))?$/i);
-    if(tm){
-      const cat = tm[1].trim(), fallback = (tm[2]||'').trim();
-      const ctx = currentTerrainContext();
-      const prefixes = terrainTablePrefixes(ctx);
-      if(!prefixes.length && fallback) prefixes.push(fallback);
-      if(!prefixes.length) return `${cat} [Gelände unbekannt — 📍 Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
-      const prefix = prefixes.find(p=>findTableByName(`${p}: ${cat}`));
-      if(!prefix) return `${cat} [keine Tabelle „${prefixes[0]}: ${cat}“]`;
-      const table = findTableByName(`${prefix}: ${cat}`);
-      if(visited.has(table.id)) return '[Zirkelverweis]';
-      const nextVisited = new Set(visited);
-      nextVisited.add(table.id);
-      return `${cat} (${prefix}) → ${rollTableCore(table, depth+1, nextVisited).text}`;
-    }
-    const table = findTableByName(name.trim());
-    if(!table) return `[${name.trim()} nicht gefunden]`;
+  const re = /\{\{([^{}]+)\}\}/g;
+  let out = text;
+  for(let pass=0; pass<20 && /\{\{[^{}]+\}\}/.test(out); pass++){
+    out = out.replace(re, (whole, name)=>resolveInlineRef(name, depth, visited));
+  }
+  return out;
+}
+function resolveInlineRef(name, depth, visited){
+  if(depth>5) return '[zu tief verschachtelt]';
+  // {{75%}} → roll d100 against it: "75% [W100: 23 ✔]"
+  const pct = name.trim().match(/^(\d{1,3})\s*%$/);
+  if(pct){
+    const roll = rollDie(100);
+    return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
+  }
+  // {{2d6}} → "2d6→7" (unless a table has that name)
+  const diceF = !findTableByName(name) && parseFormula(name.trim());
+  if(diceF){
+    let sum = diceF.mod;
+    for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
+    return `${name.trim()}→${sum}`;
+  }
+  // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
+  // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
+  const tm = name.trim().match(/^@(?:terrain|gelände)\s*:\s*([^|]+?)\s*(?:\|\s*(.+))?$/i);
+  if(tm){
+    const cat = tm[1].trim(), fallback = (tm[2]||'').trim();
+    const ctx = currentTerrainContext();
+    const prefixes = terrainTablePrefixes(ctx);
+    if(!prefixes.length && fallback) prefixes.push(fallback);
+    if(!prefixes.length) return `${cat} [Gelände unbekannt — 📍 Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
+    const prefix = prefixes.find(p=>findTableByName(`${p}: ${cat}`));
+    if(!prefix) return `${cat} [keine Tabelle „${prefixes[0]}: ${cat}“]`;
+    const table = findTableByName(`${prefix}: ${cat}`);
     if(visited.has(table.id)) return '[Zirkelverweis]';
     const nextVisited = new Set(visited);
     nextVisited.add(table.id);
-    const core = rollTableCore(table, depth+1, nextVisited);
-    return core.text;
-  });
+    return `${cat} (${prefix}) → ${rollTableCore(table, depth+1, nextVisited).text}`;
+  }
+  // {{Tomb|Tower|Palace}} → one of them, picked at random (unless a table has that name)
+  if(name.includes('|') && !findTableByName(name)){
+    const parts = name.split('|').map(p=>p.trim());
+    return parts[Math.floor(Math.random()*parts.length)];
+  }
+  const table = findTableByName(name.trim());
+  if(!table) return `[${name.trim()} nicht gefunden]`;
+  if(visited.has(table.id)) return '[Zirkelverweis]';
+  const nextVisited = new Set(visited);
+  nextVisited.add(table.id);
+  const core = rollTableCore(table, depth+1, nextVisited);
+  return core.text;
 }
 function rollTableCore(table, depth, visited){
   return table.mode==='aspects' ? rollAspectsCore(table, depth, visited) : rollListCore(table, depth, visited);
@@ -673,7 +686,7 @@ function renderDiceTab(){
     }).join('');
   }
   if(ui.managing && active.tables.length>0){
-    html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
+    html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
   }
   html += `</div>`;
 
