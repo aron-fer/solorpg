@@ -31,6 +31,7 @@ const FIELD_TYPES = [
   {id:'list', label:'Liste'},
   {id:'status', label:'Status (6 Kästchen)'},
   {id:'table', label:'Tabelle (Spalten)'},
+  {id:'spells', label:'Spell slots (Vancian)'},
 ];
 
 const STORAGE_KEY = 'solorpg-data';
@@ -56,6 +57,7 @@ function defaultValueForType(type){
   if(type==='text') return '';
   if(type==='status') return [false,false,false,false,false,false];
   if(type==='table') return {columns:['Spalte 1','Spalte 2'], rows:[]};
+  if(type==='spells') return {levels:[{slots:1, prepared:[]}]};
   return '0';
 }
 function escapeHtml(s){
@@ -253,6 +255,13 @@ function normalizeImportedEntry(e){
     links: Array.isArray(e.links) ? e.links.map(String) : [],
   };
 }
+// Embedded sub-tables of a table (see findLocalSubtable in oracle.js).
+function normalizeSubtables(list, normEntry){
+  return (Array.isArray(list) ? list : []).filter(st=>st && st.name).map(st=>({
+    name: String(st.name), distMode: st.distMode==='dist' ? 'dist' : 'equal', formula: st.formula || '',
+    entries: normEntry(st.entries || []),
+  }));
+}
 function parseJSONImport(raw){
   let data;
   try{ data = JSON.parse(raw); }catch(e){ return {error: 'Ungültiges JSON: '+e.message}; }
@@ -284,7 +293,7 @@ function parseJSONImport(raw){
         sections: t.sections.map(s=>({
           name: s.name || 'Bereich',
           fields: (s.fields||[]).map(f=>{
-            const type = ['number','counter','text','list','status','table'].includes(f.type) ? f.type : 'text';
+            const type = ['number','counter','text','list','status','table','spells'].includes(f.type) ? f.type : 'text';
             let value = f.value;
             if(type==='status'){
               value = Array.isArray(value) && value.length===6 ? value : [false,false,false,false,false,false];
@@ -292,6 +301,8 @@ function parseJSONImport(raw){
               value = (value && Array.isArray(value.columns) && Array.isArray(value.rows)) ? value : {columns:['Spalte 1'], rows:[]};
             } else if(type==='list'){
               value = Array.isArray(value) ? value : [];
+            } else if(type==='spells'){
+              value = (value && Array.isArray(value.levels)) ? value : defaultValueForType('spells');
             } else if(type==='text'){
               value = value!=null ? String(value) : '';
             } else {
@@ -311,7 +322,8 @@ function parseJSONImport(raw){
         formula: a.formula || '',
         options: (a.options||[]).map(normalizeImportedEntry),
       }));
-      tables.push({name: t.name || 'Unbenannt', group: t.group || '', mode, aspects, entries:[], distMode:'equal', formula:''});
+      tables.push({name: t.name || 'Unbenannt', group: t.group || '', mode, aspects, entries:[], distMode:'equal', formula:'',
+        subtables: normalizeSubtables(t.subtables, es=>es.map(normalizeImportedEntry))});
       return;
     }
     tables.push({
@@ -320,6 +332,7 @@ function parseJSONImport(raw){
       formula: t.formula || '',
       entries: (t.entries||[]).map(normalizeImportedEntry),
       aspects: [],
+      subtables: normalizeSubtables(t.subtables, es=>es.map(normalizeImportedEntry)),
     });
   });
   return {tables, karteien, characters};

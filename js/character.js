@@ -71,17 +71,18 @@ function moveField(sectionId, fieldId, dir){
 }
 function startEditSectionName(id){
   const s = getCurrentCharacter().sections.find(s=>s.id===id);
-  ui.editingSectionId=id; ui.sectionDraft={name:s.name};
+  ui.editingSectionId=id; ui.sectionDraft={name:s.name, quick:s.quick||null};
   render();
 }
 function cancelEditSection(){ ui.editingSectionId=null; render(); }
 function onSectionDraftName(el){ ui.sectionDraft.name = el.value; }
+function setSectionDraftQuick(v){ ui.sectionDraft.quick = v; render(); }
 function saveSection(){
   const name = ui.sectionDraft.name.trim() || 'Unbenannter Bereich';
   if(ui.editingSectionId==='new'){
-    updateCurrentCharacter(c=>({...c, sections:[...c.sections, {id:uid(), name, collapsed:false, fields:[]}]}));
+    updateCurrentCharacter(c=>({...c, sections:[...c.sections, {id:uid(), name, collapsed:false, quick:ui.sectionDraft.quick||null, fields:[]}]}));
   } else {
-    updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===ui.editingSectionId?{...s,name}:s)}));
+    updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===ui.editingSectionId?{...s,name,quick:ui.sectionDraft.quick||null}:s)}));
   }
   ui.editingSectionId=null; saveState(); render();
 }
@@ -202,7 +203,96 @@ function removeListItem(sectionId, fieldId, idx){
   saveState(); render();
 }
 
+// ---- Spell slots (Vancian): per spell level a number of slots, each filled
+// with one individually prepared spell that gets struck off when cast. ----
+function normSpellValue(v){
+  const levels = (v && Array.isArray(v.levels) ? v.levels : []).map(l=>({
+    slots: Math.max(0, parseInt(l && l.slots)||0),
+    prepared: (l && Array.isArray(l.prepared) ? l.prepared : []).map(p=>({name:String((p&&p.name)||''), cast:!!(p&&p.cast)})),
+  }));
+  return {levels: levels.length ? levels : [{slots:1, prepared:[]}]};
+}
+function updateSpellField(sectionId, fieldId, updater){
+  updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f, value:updater(normSpellValue(f.value))}:f)}:s)}));
+  saveState(); render();
+}
+function mapSpellLevel(v, li, fn){ return {...v, levels: v.levels.map((l,i)=>i===li?fn(l):l)}; }
+function prepareSpell(sectionId, fieldId, li, inputEl){
+  const name = inputEl.value.trim();
+  if(!name) return;
+  updateSpellField(sectionId, fieldId, v=>mapSpellLevel(v, li, l=>({...l, prepared:[...l.prepared, {name, cast:false}]})));
+}
+function toggleSpellCast(sectionId, fieldId, li, pi){
+  updateSpellField(sectionId, fieldId, v=>mapSpellLevel(v, li, l=>({...l, prepared:l.prepared.map((p,i)=>i===pi?{...p, cast:!p.cast}:p)})));
+}
+function removePreparedSpell(sectionId, fieldId, li, pi){
+  updateSpellField(sectionId, fieldId, v=>mapSpellLevel(v, li, l=>({...l, prepared:l.prepared.filter((_,i)=>i!==pi)})));
+}
+function setSpellSlots(sectionId, fieldId, li, el){
+  updateSpellField(sectionId, fieldId, v=>mapSpellLevel(v, li, l=>({...l, slots:Math.max(0, parseInt(el.value)||0)})));
+}
+function addSpellLevel(sectionId, fieldId){
+  updateSpellField(sectionId, fieldId, v=>({...v, levels:[...v.levels, {slots:0, prepared:[]}]}));
+}
+function removeSpellLevel(sectionId, fieldId){
+  updateSpellField(sectionId, fieldId, v=>({...v, levels: v.levels.length>1 ? v.levels.slice(0,-1) : v.levels}));
+}
+// New day: every prepared spell is available again (same preparation).
+function restSpells(sectionId, fieldId){
+  updateSpellField(sectionId, fieldId, v=>({...v, levels: v.levels.map(l=>({...l, prepared:l.prepared.map(p=>({...p, cast:false}))}))}));
+}
+function renderSpellControl(sectionId, f){
+  const v = normSpellValue(f.value);
+  const ready = v.levels.reduce((n,l)=>n+l.prepared.filter(p=>!p.cast).length, 0);
+  const slots = v.levels.reduce((n,l)=>n+l.slots, 0);
+  // Suggestions: entries of list fields in the same section (e.g. Known Spells).
+  const char = getCurrentCharacter();
+  const section = char && char.sections.find(s=>s.id===sectionId);
+  const suggestions = [...new Set((section ? section.fields : []).filter(x=>x.type==='list' && Array.isArray(x.value)).flatMap(x=>x.value))];
+  const dlId = `spellsugg-${f.id}`;
+  const rows = v.levels.map((l,li)=>{
+    if(!ui.managing && l.slots===0 && !l.prepared.length) return '';
+    const avail = l.prepared.filter(p=>!p.cast).length;
+    const free = l.slots - l.prepared.length;
+    const inputId = `spellinput-${f.id}-${li}`;
+    return `<div style="display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid var(--border);">
+      <div class="row" style="gap:6px;flex-wrap:wrap;">
+        <span style="font-weight:600;min-width:58px;">Level ${li+1}</span>
+        <span class="small-muted">·</span>
+        <span style="font-weight:700;color:${avail?'var(--gold)':'var(--text-faint)'};">${avail}</span><span class="small-muted">of ${l.slots} available</span>
+        ${free>0 ? `<span class="small-muted">· ${free} unprepared</span>` : ''}
+        ${free<0 ? `<span class="small-muted">· ${-free} over slots</span>` : ''}
+        ${ui.managing ? `<span class="row" style="gap:4px;margin-left:auto;"><span class="small-muted">Slots</span><input type="number" min="0" value="${l.slots}" onchange="setSpellSlots('${sectionId}','${f.id}',${li},this)" style="width:56px;text-align:center;"></span>` : ''}
+      </div>
+      ${l.prepared.length ? `<div class="row" style="gap:6px;flex-wrap:wrap;">
+        ${l.prepared.map((p,pi)=>`<span class="row" style="gap:2px;border:1px solid var(--border);border-radius:8px;padding:2px 2px 2px 8px;${p.cast?'opacity:0.45;':''}">
+          <button style="font-size:14px;text-align:left;${p.cast?'text-decoration:line-through;':''}" title="${p.cast?'Mark as available':'Mark as cast'}" onclick="toggleSpellCast('${sectionId}','${f.id}',${li},${pi})">${escapeHtml(p.name)}</button>
+          <button class="x-btn" title="Remove" onclick="removePreparedSpell('${sectionId}','${f.id}',${li},${pi})">✕</button>
+        </span>`).join('')}
+      </div>` : ''}
+      ${free>0 ? `<div class="row">
+        <input type="text" id="${inputId}" list="${dlId}" placeholder="Prepare a spell…" onkeydown="if(event.key==='Enter'){prepareSpell('${sectionId}','${f.id}',${li},this);}" style="flex:1;">
+        <button class="btn btn-gold" style="padding:8px 12px;" onclick="prepareSpell('${sectionId}','${f.id}',${li},document.getElementById('${inputId}'))">+</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div style="display:flex;flex-direction:column;">
+    <div class="row" style="gap:8px;padding-bottom:6px;">
+      <span style="font-size:20px;font-weight:700;color:${ready?'var(--gold)':'var(--text-faint)'};">${ready}</span>
+      <span class="small-muted">of ${slots} spells available</span>
+      <button class="btn btn-raised" style="padding:4px 10px;font-size:12px;margin-left:auto;" title="All prepared spells available again" onclick="restSpells('${sectionId}','${f.id}')">↺ New day</button>
+    </div>
+    ${rows}
+    ${ui.managing ? `<div class="row" style="gap:6px;padding-top:6px;">
+      <button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="addSpellLevel('${sectionId}','${f.id}')">+ Level</button>
+      ${v.levels.length>1 ? `<button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="removeSpellLevel('${sectionId}','${f.id}')">− Level</button>` : ''}
+    </div>` : ''}
+    ${suggestions.length ? `<datalist id="${dlId}">${suggestions.map(x=>`<option value="${escapeHtml(x)}">`).join('')}</datalist>` : ''}
+  </div>`;
+}
+
 function renderFieldControl(sectionId, f){
+  if(f.type==='spells') return renderSpellControl(sectionId, f);
   if(f.type==='number'){
     return `<input type="number" value="${escapeHtml(f.value)}" oninput="onFieldValueInput('${sectionId}','${f.id}',this)" style="width:96px;">`;
   } else if(f.type==='counter'){
@@ -260,16 +350,25 @@ function renderFieldControl(sectionId, f){
   }
   return '';
 }
-function renderFieldRow(section, f, fIdx, showTierBadge){
+// opts.quick ({key, idx, len}): in the quick view the ↑↓ arrows reorder the
+// quick-view items instead of moving the field inside its section;
+// opts.inBlock: field inside a whole-section block there — only ✎.
+function renderFieldRow(section, f, fIdx, showTierBadge, opts){
+  opts = opts || {};
   const tierBadge = showTierBadge ? {surface:'⏱ jede Runde', scene:'◷ pro Szene', rare:'· selten'}[f.tier||'rare'] : '';
+  let controls = '';
+  if(ui.managing){
+    const edit = `<button class="x-btn" onclick="startEditField('${section.id}','${f.id}')">✎</button>`;
+    if(opts.inBlock) controls = edit;
+    else if(opts.quick) controls = quickMoveButtons(opts.quick) + edit;
+    else controls = `<button class="icon-btn" style="${fIdx===0?'opacity:0.3;':''}" ${fIdx===0?'disabled':''} onclick="moveField('${section.id}','${f.id}',-1)">↑</button>
+        <button class="icon-btn" style="${fIdx===section.fields.length-1?'opacity:0.3;':''}" ${fIdx===section.fields.length-1?'disabled':''} onclick="moveField('${section.id}','${f.id}',1)">↓</button>
+        ${edit}`;
+  }
   return `<div style="display:flex;flex-direction:column;gap:6px;">
     <div class="field-label-row">
       <span class="small-muted">${escapeHtml(f.name)}${tierBadge?` <span style="opacity:0.6;">(${tierBadge})</span>`:''}</span>
-      ${ui.managing ? `<div class="row" style="gap:2px;">
-        <button class="icon-btn" style="${fIdx===0?'opacity:0.3;':''}" ${fIdx===0?'disabled':''} onclick="moveField('${section.id}','${f.id}',-1)">↑</button>
-        <button class="icon-btn" style="${fIdx===section.fields.length-1?'opacity:0.3;':''}" ${fIdx===section.fields.length-1?'disabled':''} onclick="moveField('${section.id}','${f.id}',1)">↓</button>
-        <button class="x-btn" onclick="startEditField('${section.id}','${f.id}')">✎</button>
-      </div>` : ''}
+      ${controls ? `<div class="row" style="gap:2px;">${controls}</div>` : ''}
     </div>
     ${renderFieldControl(section.id, f)}
   </div>`;
@@ -332,6 +431,7 @@ function renderCharacterTab(){
         <button class="row" style="flex:1;text-align:left;" onclick="toggleSectionCollapse('${section.id}')">
           <span style="color:var(--text-faint);">${section.collapsed?'▶':'▼'}</span>
           <span style="color:var(--gold);font-weight:600;font-size:14px;">${escapeHtml(section.name)}</span>
+          ${section.quick ? `<span class="small-muted" title="Ganzer Bereich in der Kurzansicht">${section.quick==='surface' ? '⏱ Kurzansicht' : '◷ Kurzansicht'}</span>` : ''}
         </button>
         ${ui.managing ? `<div class="row" style="gap:4px;">
           <button class="icon-btn" style="${sIdx===0?'opacity:0.3;':''}" ${sIdx===0?'disabled':''} onclick="moveSection('${section.id}',-1)">↑</button>
@@ -347,35 +447,68 @@ function renderCharacterTab(){
   return html;
 }
 // Quick/reference view: flattens every section's fields into three tiers by
-// how often they get looked up, ignoring section boundaries. Surface fields
-// (usually counters — HP, ammo, slots) get the biggest, most tappable
-// controls; rare fields (saves, gear, lore) sit collapsed at the bottom.
-function renderCharacterQuickView(currentChar){
-  const surface = [], scene = [], rare = [];
+// how often they get looked up, ignoring section boundaries. A section can
+// also be put in as a whole (section.quick = 'surface' | 'scene'): it then
+// shows as one titled block with all its fields. Items in "jede Runde" and
+// "pro Szene" can be reordered by hand (character.quickOrder, keys
+// 'f:<fieldId>' / 's:<sectionId>'); items not in that list come last.
+function quickViewGroups(currentChar){
+  const groups = {surface:[], scene:[], rare:[]};
   currentChar.sections.forEach(section=>{
-    section.fields.forEach((f,fIdx)=>{
-      const entry = {section, f, fIdx};
-      if(f.tier==='surface') surface.push(entry);
-      else if(f.tier==='scene') scene.push(entry);
-      else rare.push(entry);
-    });
+    if(section.quick){ groups[section.quick].push({key:'s:'+section.id, section}); return; }
+    section.fields.forEach((f,fIdx)=>groups[f.tier==='surface'||f.tier==='scene' ? f.tier : 'rare'].push({key:'f:'+f.id, section, f, fIdx}));
   });
-  let html = '';
-  if(surface.length){
-    html += `<p class="label" style="margin:2px 0 0;">jede Runde</p>`;
-    html += `<div class="grid-cards">` + surface.map(({section,f,fIdx})=>`<div class="panel">${renderFieldRow(section,f,fIdx,false)}</div>`).join('') + `</div>`;
+  const pos = new Map((currentChar.quickOrder||[]).map((k,i)=>[k,i]));
+  const rank = it => pos.has(it.key) ? pos.get(it.key) : Infinity;
+  ['surface','scene'].forEach(t=>{
+    groups[t] = groups[t].map((it,i)=>({it,i})).sort((a,b)=>(rank(a.it)-rank(b.it)) || (a.i-b.i)).map(x=>x.it);
+  });
+  return groups;
+}
+function moveQuickItem(key, dir){
+  const groups = quickViewGroups(getCurrentCharacter());
+  const lists = ['surface','scene'].map(t=>groups[t].map(it=>it.key));
+  const list = lists.find(l=>l.includes(key));
+  if(!list) return;
+  const idx = list.indexOf(key), newIdx = idx+dir;
+  if(newIdx<0 || newIdx>=list.length) return;
+  [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+  updateCurrentCharacter(c=>({...c, quickOrder:[...lists[0], ...lists[1]]}));
+  saveState(); render();
+}
+function quickMoveButtons(q){
+  return `<button class="icon-btn" style="${q.idx===0?'opacity:0.3;':''}" ${q.idx===0?'disabled':''} onclick="moveQuickItem('${q.key}',-1)">↑</button>
+    <button class="icon-btn" style="${q.idx===q.len-1?'opacity:0.3;':''}" ${q.idx===q.len-1?'disabled':''} onclick="moveQuickItem('${q.key}',1)">↓</button>`;
+}
+function renderCharacterQuickView(currentChar){
+  const groups = quickViewGroups(currentChar);
+  const card = (it, idx, len) => {
+    const q = {key:it.key, idx, len};
+    if(it.f) return `<div class="panel">${renderFieldRow(it.section, it.f, it.fIdx, false, {quick:q})}</div>`;
+    const section = it.section;
+    return `<div class="panel">
+      <div class="field-label-row">
+        <span style="color:var(--gold);font-weight:600;font-size:14px;">${escapeHtml(section.name)}</span>
+        ${ui.managing ? `<div class="row" style="gap:2px;">${quickMoveButtons(q)}<button class="x-btn" onclick="startEditSectionName('${section.id}')">✎</button></div>` : ''}
+      </div>
+      ${section.fields.length
+        ? `<div style="display:flex;flex-direction:column;gap:10px;padding-left:4px;">${section.fields.map((f,fIdx)=>renderFieldRow(section,f,fIdx,false,{inBlock:true})).join('')}</div>`
+        : `<p class="small-muted" style="margin:0;">Keine Felder in diesem Bereich.</p>`}
+    </div>`;
+  };
+  const tierBlock = (label, items, top) => items.length
+    ? `<p class="label" style="margin:${top}px 0 0;">${label}</p><div class="masonry-cards">${items.map((it,i)=>card(it,i,items.length)).join('')}</div>`
+    : '';
+  let html = tierBlock('jede Runde', groups.surface, 2) + tierBlock('pro Szene', groups.scene, 4);
+  if(!groups.surface.length && !groups.scene.length){
+    html += `<div class="panel empty"><span class="small-muted">Noch nichts für die Kurzansicht markiert. Über das Zahnrad (⚙) in der Vollansicht kannst du ein Feld als „Jede Runde" oder „Pro Szene" einstellen — oder mit ✎ am Bereich gleich einen ganzen Bereich (z.B. Saving Throws).</span></div>`;
+  } else if(ui.managing){
+    html += `<p class="small-muted" style="margin:0;">Mit ↑↓ sortieren — die Reihenfolge läuft spaltenweise von oben nach unten.</p>`;
   }
-  if(scene.length){
-    html += `<p class="label" style="margin:8px 0 0;">pro Szene</p>`;
-    html += `<div class="panel">` + scene.map(({section,f,fIdx})=>renderFieldRow(section,f,fIdx,false)).join('<div style="height:8px;"></div>') + `</div>`;
-  }
-  if(!surface.length && !scene.length){
-    html += `<div class="panel empty"><span class="small-muted">Noch keine Felder als „Jede Runde" oder „Pro Szene" markiert. Öffne ein Feld über das Zahnrad (⚙) und die Vollansicht, um seine Häufigkeit einzustellen.</span></div>`;
-  }
-  if(rare.length){
-    html += `<details style="margin-top:8px;">
-      <summary class="small-muted" style="cursor:pointer;">▸ selten — ${rare.length} weitere Felder</summary>
-      <div class="panel" style="margin-top:8px;">${rare.map(({section,f,fIdx})=>renderFieldRow(section,f,fIdx,false)).join('<div style="height:8px;"></div>')}</div>
+  if(groups.rare.length){
+    html += `<details style="margin-top:4px;">
+      <summary class="small-muted" style="cursor:pointer;">▸ selten — ${groups.rare.length} weitere Felder</summary>
+      <div class="panel" style="margin-top:8px;">${groups.rare.map(({section,f,fIdx})=>renderFieldRow(section,f,fIdx,false,{inBlock:true})).join('<div style="height:8px;"></div>')}</div>
     </details>`;
   }
   return html;
@@ -387,6 +520,13 @@ function renderSectionModal(){
     <div class="row between"><span class="label" style="color:var(--gold);">${isNew?'Neuer Bereich':'Bereich umbenennen'}</span>
       <button class="icon-btn" onclick="cancelEditSection()">✕</button></div>
     <input type="text" value="${escapeHtml(ui.sectionDraft.name)}" placeholder="Name des Bereichs, z.B. Attribute" oninput="onSectionDraftName(this)">
+    <span class="small-muted">In der Kurzansicht:</span>
+    <div class="mode-toggle">
+      <button style="${!ui.sectionDraft.quick?'background:var(--gold);color:var(--bg);':''}" onclick="setSectionDraftQuick(null)">Einzeln nach Feldern</button>
+      <button style="${ui.sectionDraft.quick==='surface'?'background:var(--gold);color:var(--bg);':''}" onclick="setSectionDraftQuick('surface')">Ganzer Bereich · jede Runde</button>
+      <button style="${ui.sectionDraft.quick==='scene'?'background:var(--gold);color:var(--bg);':''}" onclick="setSectionDraftQuick('scene')">Ganzer Bereich · pro Szene</button>
+    </div>
+    <p class="small-muted" style="margin:0;">„Ganzer Bereich" zeigt den Bereich in der Kurzansicht als eigenen Block mit allen Feldern — die Häufigkeit der einzelnen Felder zählt dann für diesen Bereich nicht.</p>
     <div class="row">
       ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteSection('${ui.editingSectionId}')">🗑 Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveSection()">✓ Speichern</button>

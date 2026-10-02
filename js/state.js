@@ -56,8 +56,12 @@ function ensureCampaign(data){
   // Counters default to surface since they're explicitly things that change during play.
   d.characters = (d.characters||[]).map(c=>({
     id: c.id||uid(), name: c.name||'Charakter',
+    // Manual order of quick-view items: 'f:<fieldId>' / 's:<sectionId>'
+    quickOrder: Array.isArray(c.quickOrder) ? c.quickOrder.filter(k=>typeof k==='string') : [],
     sections: (c.sections||[]).map(s=>({
       id: s.id||uid(), name: s.name||'Bereich', collapsed: !!s.collapsed,
+      // Whole section in the quick view: null (per field) | 'surface' | 'scene'
+      quick: (s.quick==='surface'||s.quick==='scene') ? s.quick : null,
       fields: (s.fields||[]).map(f=>({
         id: f.id||uid(), name: f.name||'Feld', type: f.type||'text', value: f.value,
         tier: (f.tier==='surface'||f.tier==='scene'||f.tier==='rare') ? f.tier : (f.type==='counter' ? 'surface' : 'rare'),
@@ -122,6 +126,7 @@ function ensureCampaign(data){
       distMode: a.distMode || 'equal', formula: a.formula || '',
       options: migrateTableEntries(a.options),
     })),
+    subtables: normalizeSubtables(t.subtables, migrateTableEntries),
   }));
   d.collapsedGroups = Object.assign({}, d.collapsedGroups || {});
   d.splitView = !!d.splitView;

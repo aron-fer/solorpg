@@ -35,6 +35,16 @@ function findTableByName(name){
   }
   return idx.get(name.trim().toLowerCase());
 }
+// Embedded sub-tables (table.subtables): only visible to {{Name}} refs while
+// their own table is being rolled, so a generator can be one single table.
+// They may refer to themselves ("roll twice: {{Reward}}, {{Reward}}");
+// the depth limit stops runaway recursion.
+const inlineScopes = [];
+function findLocalSubtable(name){
+  const k = name.trim().toLowerCase();
+  for(let i=inlineScopes.length-1;i>=0;i--){ const t = inlineScopes[i].get(k); if(t) return t; }
+  return null;
+}
 function pickEntry(entries, distMode, formula){
   if(!entries.length) return {entry:null, rollInfo:''};
   if(distMode==='dist'){
@@ -57,6 +67,8 @@ function resolveInlineRefs(text, depth, visited){
       const roll = rollDie(100);
       return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
     }
+    const local = findLocalSubtable(name);
+    if(local) return rollListCore(local, depth+1, visited).text;
     // {{2d6}} → "2d6→7" (unless a table has that name)
     const diceF = !findTableByName(name) && parseFormula(name.trim());
     if(diceF){
@@ -91,7 +103,13 @@ function resolveInlineRefs(text, depth, visited){
   });
 }
 function rollTableCore(table, depth, visited){
-  return table.mode==='aspects' ? rollAspectsCore(table, depth, visited) : rollListCore(table, depth, visited);
+  const subs = table.subtables && table.subtables.length;
+  if(subs) inlineScopes.push(new Map(table.subtables.map((st,i)=>[st.name.trim().toLowerCase(), {...st, id:`${table.id}:sub${i}`, mode:'list'}])));
+  try{
+    return table.mode==='aspects' ? rollAspectsCore(table, depth, visited) : rollListCore(table, depth, visited);
+  } finally {
+    if(subs) inlineScopes.pop();
+  }
 }
 function rollListCore(table, depth, visited){
   const {entry, rollInfo} = pickEntry(table.entries, table.distMode, table.formula);
@@ -392,11 +410,11 @@ function runImport(){
   backupNow('Vor Tabellen-Import');
   updateActive(camp=>{
     const tables = [...camp.tables];
-    result.tables.forEach(({name, group, mode, distMode, formula, entries, aspects})=>{
+    result.tables.forEach(({name, group, mode, distMode, formula, entries, aspects, subtables})=>{
       group = (group||'').trim();
       const idx = tables.findIndex(t=>t.name.trim().toLowerCase()===name.trim().toLowerCase());
-      if(idx>=0) tables[idx] = Object.assign({}, tables[idx], {name, group, mode, distMode, formula, entries, aspects});
-      else tables.push({id:uid(), name, group, mode, distMode, formula, entries, aspects});
+      if(idx>=0) tables[idx] = Object.assign({}, tables[idx], {name, group, mode, distMode, formula, entries, aspects, subtables});
+      else tables.push({id:uid(), name, group, mode, distMode, formula, entries, aspects, subtables});
     });
     const karteien = [...camp.karteien];
     const tabOrder = [...camp.tabOrder];
