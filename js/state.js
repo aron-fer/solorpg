@@ -59,7 +59,7 @@ function ensureCampaign(data){
     sections: (c.sections||[]).map(s=>({
       id: s.id||uid(), name: s.name||'Bereich', collapsed: !!s.collapsed,
       fields: (s.fields||[]).map(f=>({
-        id: f.id||uid(), name: f.name||'Feld', type: f.type||'text', value: f.value,
+        id: f.id||uid(), name: f.name||'Feld', type: f.type||'text', value: f.type==='slots' ? normalizeSlots(f.value) : f.value,
         tier: (f.tier==='surface'||f.tier==='scene'||f.tier==='rare') ? f.tier : (f.type==='counter' ? 'surface' : 'rare'),
       })),
     })),

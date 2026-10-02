@@ -1,0 +1,374 @@
+[
+  {
+    "name": "New Character",
+    "sections": [
+      {
+        "name": "Overview",
+        "fields": [
+          {
+            "name": "Class",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Race",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Alignment",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Level",
+            "type": "number",
+            "tier": "scene",
+            "value": "1"
+          },
+          {
+            "name": "XP",
+            "type": "counter",
+            "tier": "scene",
+            "value": "0"
+          },
+          {
+            "name": "XP Needed for Next Level",
+            "type": "number",
+            "tier": "rare",
+            "value": "0"
+          },
+          {
+            "name": "10% XP Bonus? (yes/no)",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Languages",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Religion",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Secondary Skills",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Place of Origin",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          },
+          {
+            "name": "Appearance (gender, age, height, weight, eyes, hair, traits)",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "name": "Attributes",
+        "fields": [
+          {
+            "name": "Attributes",
+            "type": "table",
+            "tier": "rare",
+            "value": {
+              "columns": [
+                "Attribute",
+                "Score",
+                "Test",
+                "Ex. Feat %",
+                "Modifiers (e.g. Atk +1 / Dmg +1 / HP +1)"
+              ],
+              "rows": [
+                [
+                  "Strength (ST)",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "Dexterity (DX)",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "Constitution (CN)",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "Intelligence (IN)",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "Wisdom (WS)",
+                  "",
+                  "",
+                  "",
+                  ""
+                ],
+                [
+                  "Charisma (CH)",
+                  "",
+                  "",
+                  "",
+                  ""
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Combat",
+        "fields": [
+          {
+            "name": "Hit Points",
+            "type": "counter",
+            "tier": "surface",
+            "value": "1"
+          },
+          {
+            "name": "Hit Points (max)",
+            "type": "number",
+            "tier": "scene",
+            "value": "1"
+          },
+          {
+            "name": "Armour Class (AC)",
+            "type": "number",
+            "tier": "scene",
+            "value": "9"
+          },
+          {
+            "name": "Fighting Ability (FA)",
+            "type": "number",
+            "tier": "scene",
+            "value": "0"
+          },
+          {
+            "name": "Damage Reduction (DR)",
+            "type": "number",
+            "tier": "scene",
+            "value": "0"
+          },
+          {
+            "name": "Movement (MV)",
+            "type": "number",
+            "tier": "scene",
+            "value": "120"
+          },
+          {
+            "name": "Saving Throws",
+            "type": "table",
+            "tier": "scene",
+            "value": {
+              "columns": [
+                "Save",
+                "Target / Mod"
+              ],
+              "rows": [
+                [
+                  "Saving Throw (base)",
+                  ""
+                ],
+                [
+                  "Death",
+                  ""
+                ],
+                [
+                  "Transformation",
+                  ""
+                ],
+                [
+                  "Device",
+                  ""
+                ],
+                [
+                  "Avoidance",
+                  ""
+                ],
+                [
+                  "Sorcery",
+                  ""
+                ]
+              ]
+            }
+          },
+          {
+            "name": "Armour, Shield & other AC / Save Modifiers",
+            "type": "text",
+            "tier": "rare",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "name": "Weapons",
+        "fields": [
+          {
+            "name": "Melee",
+            "type": "table",
+            "tier": "scene",
+            "value": {
+              "columns": [
+                "Weapon",
+                "Atk Rate",
+                "Atk Mod",
+                "Damage",
+                "WC / Notes"
+              ],
+              "rows": []
+            }
+          },
+          {
+            "name": "Missile",
+            "type": "table",
+            "tier": "scene",
+            "value": {
+              "columns": [
+                "Weapon",
+                "Range S/M/L",
+                "Atk Rate",
+                "Atk Mod",
+                "Damage / Notes"
+              ],
+              "rows": []
+            }
+          },
+          {
+            "name": "Ammunition",
+            "type": "counter",
+            "tier": "surface",
+            "value": "0"
+          }
+        ]
+      },
+      {
+        "name": "Class Abilities",
+        "fields": [
+          {
+            "name": "Abilities",
+            "type": "list",
+            "tier": "scene",
+            "value": []
+          }
+        ]
+      },
+      {
+        "name": "Equipment",
+        "fields": [
+          {
+            "name": "Rations (days)",
+            "type": "counter",
+            "tier": "scene",
+            "value": "0"
+          },
+          {
+            "name": "Torches / Oil Flasks",
+            "type": "counter",
+            "tier": "scene",
+            "value": "0"
+          },
+          {
+            "name": "Weapons, Armour, Gear",
+            "type": "list",
+            "tier": "rare",
+            "value": []
+          },
+          {
+            "name": "Magic Items",
+            "type": "list",
+            "tier": "rare",
+            "value": []
+          }
+        ]
+      },
+      {
+        "name": "Treasure",
+        "fields": [
+          {
+            "name": "Gold (gp)",
+            "type": "counter",
+            "tier": "rare",
+            "value": "0"
+          },
+          {
+            "name": "Silver (sp)",
+            "type": "counter",
+            "tier": "rare",
+            "value": "0"
+          },
+          {
+            "name": "Copper (cp)",
+            "type": "counter",
+            "tier": "rare",
+            "value": "0"
+          },
+          {
+            "name": "Electrum (ep)",
+            "type": "counter",
+            "tier": "rare",
+            "value": "0"
+          },
+          {
+            "name": "Platinum (pp)",
+            "type": "counter",
+            "tier": "rare",
+            "value": "0"
+          },
+          {
+            "name": "Gems and Jewellery",
+            "type": "list",
+            "tier": "rare",
+            "value": []
+          }
+        ]
+      },
+      {
+        "name": "Henchmen / Hirelings",
+        "fields": [
+          {
+            "name": "Henchmen",
+            "type": "table",
+            "tier": "rare",
+            "value": {
+              "columns": [
+                "Name",
+                "Class/Species",
+                "AC / HD / hp",
+                "Attacks / Dmg",
+                "SV / ML",
+                "Notes / Gear"
+              ],
+              "rows": []
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

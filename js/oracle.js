@@ -431,7 +431,7 @@ function runImport(){
       const idx = characters.findIndex(c=>c.name.trim().toLowerCase()===name.trim().toLowerCase());
       const newSections = sections.map(s=>({
         id: uid(), name: s.name,
-        fields: s.fields.map(f=>({id:uid(), name:f.name, type:f.type, value:f.value})),
+        fields: s.fields.map(f=>({id:uid(), name:f.name, type:f.type, value:f.value, tier: f.tier || (f.type==='counter' || f.type==='slots' ? 'surface' : 'rare')})),
       }));
       if(idx>=0){
         const existing = characters[idx];
@@ -739,7 +739,7 @@ function renderImportModal(){
   return `<div class="modal-overlay"><div class="modal-sheet">
     <div class="row between"><span class="label" style="color:var(--gold);">Tabellen, Karteien &amp; Charaktere importieren (JSON)</span>
       <button class="icon-btn" onclick="cancelImport()">✕</button></div>
-    <p class="small-muted">Ein JSON-Array von Tabellen, Karteien und/oder Charakteren einfügen oder als Datei(en) auswählen — landen in der aktuellen Kampagne. Gibt es bereits eine Tabelle/Kartei/Charakter mit demselben Namen, werden Tabellen ersetzt, Karteien um neue Einträge ergänzt, bei Charakteren neue Bereiche hinzugefügt und gleichnamige Bereiche ersetzt. <code style="color:var(--gold);">{{Tabellenname}}</code> im Text setzt inline einen Wurf aus einer anderen Tabelle ein, <code style="color:var(--gold);">"links"</code> hängt einen kompletten Zusatz-Wurf an. Eine Kartei erkennt der Import an Einträgen mit <code style="color:var(--gold);">"title"</code>/<code style="color:var(--gold);">"notes"</code>, ein Charakter an <code style="color:var(--gold);">"sections"</code> mit <code style="color:var(--gold);">"fields"</code> (Typen: number, counter, text, list, status, table).</p>
+    <p class="small-muted">Ein JSON-Array von Tabellen, Karteien und/oder Charakteren einfügen oder als Datei(en) auswählen — landen in der aktuellen Kampagne. Gibt es bereits eine Tabelle/Kartei/Charakter mit demselben Namen, werden Tabellen ersetzt, Karteien um neue Einträge ergänzt, bei Charakteren neue Bereiche hinzugefügt und gleichnamige Bereiche ersetzt. <code style="color:var(--gold);">{{Tabellenname}}</code> im Text setzt inline einen Wurf aus einer anderen Tabelle ein, <code style="color:var(--gold);">"links"</code> hängt einen kompletten Zusatz-Wurf an. Eine Kartei erkennt der Import an Einträgen mit <code style="color:var(--gold);">"title"</code>/<code style="color:var(--gold);">"notes"</code>, ein Charakter an <code style="color:var(--gold);">"sections"</code> mit <code style="color:var(--gold);">"fields"</code> (Typen: number, counter, text, list, status, table, slots; optional <code style="color:var(--gold);">"tier"</code>: surface / scene / rare für die Kurzansicht).</p>
     <button class="btn btn-raised" onclick="triggerTableImport()">📁 Datei(en) auswählen (.json)</button>
     <textarea rows="16" placeholder='[
   {

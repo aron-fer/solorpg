@@ -136,6 +136,25 @@ function incrementFieldCounter(sectionId, fieldId, delta){
   updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f,value:newVal}:f)}:s)}));
   saveState(); render();
 }
+// ---- Slots field (rows of boxes, e.g. spells per day) ----
+function updateSlots(sectionId, fieldId, fn){
+  updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f, value: normalizeSlots(fn(f.value.map(r=>({...r}))))}:f)}:s)}));
+  saveState(); render();
+}
+// Tapping a used box frees it and every box after it; a free box marks up to it.
+function toggleSlot(sectionId, fieldId, row, idx){
+  updateSlots(sectionId, fieldId, rows=>{ const r = rows[row]; r.used = idx < r.used ? idx : idx+1; return rows; });
+}
+function changeSlotMax(sectionId, fieldId, row, delta){
+  updateSlots(sectionId, fieldId, rows=>{ rows[row].max += delta; return rows; });
+}
+function resetSlots(sectionId, fieldId){ updateSlots(sectionId, fieldId, rows=>rows.map(r=>({...r, used:0}))); }
+function addSlotRow(sectionId, fieldId){ updateSlots(sectionId, fieldId, rows=>[...rows, {label:'Stufe '+(rows.length+1), max:1, used:0}]); }
+function removeSlotRow(sectionId, fieldId, row){ updateSlots(sectionId, fieldId, rows=>rows.filter((_,i)=>i!==row)); }
+function onSlotLabelInput(sectionId, fieldId, row, el){
+  updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f, value: f.value.map((r,i)=>i===row?{...r, label:el.value}:r)}:f)}:s)}));
+  saveState();
+}
 function toggleStatusBox(sectionId, fieldId, boxIdx){
   updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>{
     if(f.id!==fieldId) return f;
@@ -212,7 +231,9 @@ function renderFieldControl(sectionId, f){
       <button class="counter-btn" onclick="incrementFieldCounter('${sectionId}','${f.id}',1)">+</button>
     </div>`;
   } else if(f.type==='text'){
-    return `<textarea rows="3" oninput="onFieldValueInput('${sectionId}','${f.id}',this)">${escapeHtml(f.value)}</textarea>`;
+    // Short values (class, race, …) get a one-line box; longer ones three lines.
+    const v = String(f.value||''), rows = (v.length>40 || v.includes('\n')) ? 3 : 1;
+    return `<textarea rows="${rows}" style="field-sizing:content;" oninput="onFieldValueInput('${sectionId}','${f.id}',this)">${escapeHtml(v)}</textarea>`;
   } else if(f.type==='list'){
     return `<div style="display:flex;flex-direction:column;gap:6px;">
       ${f.value.map((item,idx)=>`<div class="list-item-row"><span style="flex:1;font-size:14px;">${escapeHtml(item)}</span><button class="x-btn" onclick="removeListItem('${sectionId}','${f.id}',${idx})">✕</button></div>`).join('')}
@@ -230,6 +251,33 @@ function renderFieldControl(sectionId, f){
       ()=>`clearStatusField('${sectionId}','${f.id}')`,
       inputId
     );
+  } else if(f.type==='slots'){
+    const args = `'${sectionId}','${f.id}'`;
+    // Outside edit mode, rows with 0 boxes (spell levels not reached yet) are hidden.
+    const rows = f.value.map((r,ri)=>{
+      if(!ui.managing && r.max===0) return '';
+      const boxes = Array.from({length:r.max}, (_,i)=>{
+        const on = i < r.used;
+        return `<button onclick="toggleSlot(${args},${ri},${i})" title="${on?'wieder frei':'verbraucht'}" style="width:26px;height:26px;border-radius:6px;border:1.5px solid ${on?'var(--gold-dim)':'var(--gold)'};background:${on?'var(--gold-dim)':'transparent'};color:var(--bg);font-size:13px;line-height:1;">${on?'✕':''}</button>`;
+      }).join('');
+      return `<div class="row wrap" style="gap:6px;">
+        ${ui.managing
+          ? `<input type="text" value="${escapeHtml(r.label)}" oninput="onSlotLabelInput(${args},${ri},this)" style="width:90px;font-size:13px;padding:4px 6px;">
+             <button class="counter-btn" style="width:28px;height:28px;font-size:14px;" onclick="changeSlotMax(${args},${ri},-1)">−</button>
+             <button class="counter-btn" style="width:28px;height:28px;font-size:14px;" onclick="changeSlotMax(${args},${ri},1)">+</button>`
+          : `<span style="font-size:13px;min-width:64px;">${escapeHtml(r.label)}</span>`}
+        ${boxes}
+        <span class="small-muted">${r.max - r.used}/${r.max}</span>
+        ${ui.managing ? `<button class="x-btn" style="margin-left:auto;" onclick="removeSlotRow(${args},${ri})">✕</button>` : ''}
+      </div>`;
+    }).join('');
+    return `<div style="display:flex;flex-direction:column;gap:8px;">
+      ${rows || '<p class="small-muted" style="margin:0;">Noch keine Kästchen — im Bearbeiten-Modus (⚙) mit + anlegen.</p>'}
+      <div class="row" style="gap:6px;">
+        <button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="resetSlots(${args})">↺ Alle frei (Rast)</button>
+        ${ui.managing ? `<button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="addSlotRow(${args})">+ Zeile</button>` : ''}
+      </div>
+    </div>`;
   } else if(f.type==='table'){
     const tv = f.value;
     return `<div style="display:flex;flex-direction:column;gap:6px;">

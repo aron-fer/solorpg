@@ -31,6 +31,7 @@ const FIELD_TYPES = [
   {id:'list', label:'Liste'},
   {id:'status', label:'Status (6 Kästchen)'},
   {id:'table', label:'Tabelle (Spalten)'},
+  {id:'slots', label:'Kästchen (z.B. Zauber/Tag)'},
 ];
 
 const STORAGE_KEY = 'solorpg-data';
@@ -56,7 +57,16 @@ function defaultValueForType(type){
   if(type==='text') return '';
   if(type==='status') return [false,false,false,false,false,false];
   if(type==='table') return {columns:['Spalte 1','Spalte 2'], rows:[]};
+  if(type==='slots') return [{label:'Stufe 1', max:1, used:0}];
   return '0';
+}
+// Slots field: rows of tickable boxes, e.g. spells per day per level.
+function normalizeSlots(value){
+  if(!Array.isArray(value)) return defaultValueForType('slots');
+  return value.map((r,i)=>{
+    const max = Math.max(0, Math.min(20, parseInt(r && r.max,10)||0));
+    return {label: (r && r.label!=null) ? String(r.label) : 'Stufe '+(i+1), max, used: Math.max(0, Math.min(max, parseInt(r && r.used,10)||0))};
+  });
 }
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -284,12 +294,14 @@ function parseJSONImport(raw){
         sections: t.sections.map(s=>({
           name: s.name || 'Bereich',
           fields: (s.fields||[]).map(f=>{
-            const type = ['number','counter','text','list','status','table'].includes(f.type) ? f.type : 'text';
+            const type = ['number','counter','text','list','status','table','slots'].includes(f.type) ? f.type : 'text';
             let value = f.value;
             if(type==='status'){
               value = Array.isArray(value) && value.length===6 ? value : [false,false,false,false,false,false];
             } else if(type==='table'){
               value = (value && Array.isArray(value.columns) && Array.isArray(value.rows)) ? value : {columns:['Spalte 1'], rows:[]};
+            } else if(type==='slots'){
+              value = normalizeSlots(value);
             } else if(type==='list'){
               value = Array.isArray(value) ? value : [];
             } else if(type==='text'){
@@ -297,7 +309,8 @@ function parseJSONImport(raw){
             } else {
               value = value!=null ? String(value) : '0';
             }
-            return {name: f.name || 'Feld', type, value};
+            const tier = ['surface','scene','rare'].includes(f.tier) ? f.tier : undefined;
+            return {name: f.name || 'Feld', type, value, tier};
           }),
         })),
       });
