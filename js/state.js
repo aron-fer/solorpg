@@ -63,7 +63,7 @@ function ensureCampaign(data){
       // Whole section in the quick view: null (per field) | 'surface' | 'scene'
       quick: (s.quick==='surface'||s.quick==='scene') ? s.quick : null,
       fields: (s.fields||[]).map(f=>({
-        id: f.id||uid(), name: f.name||'Feld', type: f.type||'text', value: f.value,
+        id: f.id||uid(), name: f.name||'Feld', type: f.type==='slots' ? 'spells' : (f.type||'text'), value: f.type==='slots' ? slotsToSpells(f.value) : f.value,
         tier: (f.tier==='surface'||f.tier==='scene'||f.tier==='rare') ? f.tier : (f.type==='counter' ? 'surface' : 'rare'),
       })),
     })),
@@ -93,6 +93,11 @@ function ensureCampaign(data){
     const s = m.gridSize, h = s/2;
     return {...m, cellCentered:true, nodes: m.nodes.map(n=>(n.x%s===0 && n.y%s===0) ? {...n, x:n.x+h, y:n.y+h} : n)};
   });
+  // Areas (encounter tables per hex) are optional; campaigns that already
+  // use them keep them on.
+  d.areasEnabled = (data && typeof data.areasEnabled==='boolean') ? data.areasEnabled : d.maps.some(m=>m.nodes.some(n=>n.area));
+  // Hex maps have no connections: drop any left over from older versions.
+  d.maps = d.maps.map(m=>m.grid==='hex' && m.edges.length ? {...m, edges:[]} : m);
   if(!d.maps.some(m=>m.id===d.activeMapId)) d.activeMapId = d.maps[0] ? d.maps[0].id : null;
   // Relations: one or more faction/NPC relationship webs per campaign (e.g. per
   // region or scale). Older data had a single web at campaign level — it
@@ -126,7 +131,6 @@ function ensureCampaign(data){
       distMode: a.distMode || 'equal', formula: a.formula || '',
       options: migrateTableEntries(a.options),
     })),
-    subtables: normalizeSubtables(t.subtables, migrateTableEntries),
   }));
   d.collapsedGroups = Object.assign({}, d.collapsedGroups || {});
   d.splitView = !!d.splitView;
@@ -171,7 +175,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   characterViewMode:'full',
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null,
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null,
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,

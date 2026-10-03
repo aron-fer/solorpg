@@ -35,16 +35,6 @@ function findTableByName(name){
   }
   return idx.get(name.trim().toLowerCase());
 }
-// Embedded sub-tables (table.subtables): only visible to {{Name}} refs while
-// their own table is being rolled, so a generator can be one single table.
-// They may refer to themselves ("roll twice: {{Reward}}, {{Reward}}");
-// the depth limit stops runaway recursion.
-const inlineScopes = [];
-function findLocalSubtable(name){
-  const k = name.trim().toLowerCase();
-  for(let i=inlineScopes.length-1;i>=0;i--){ const t = inlineScopes[i].get(k); if(t) return t; }
-  return null;
-}
 function pickEntry(entries, distMode, formula){
   if(!entries.length) return {entry:null, rollInfo:''};
   if(distMode==='dist'){
@@ -57,59 +47,64 @@ function pickEntry(entries, distMode, formula){
   }
   return {entry: entries[Math.floor(Math.random()*entries.length)], rollInfo:''};
 }
+// {{…}} can be nested; the innermost ones are resolved first, so
+// {{Attack {{Tomb|Tower}}|Find {{Ring|Skull}}}} works.
 function resolveInlineRefs(text, depth, visited){
   if(!text) return text;
-  return text.replace(/\{\{([^}]+)\}\}/g, (whole, name)=>{
-    if(depth>5) return '[zu tief verschachtelt]';
-    // {{75%}} → roll d100 against it: "75% [W100: 23 ✔]"
-    const pct = name.trim().match(/^(\d{1,3})\s*%$/);
-    if(pct){
-      const roll = rollDie(100);
-      return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
-    }
-    const local = findLocalSubtable(name);
-    if(local) return rollListCore(local, depth+1, visited).text;
-    // {{2d6}} → "2d6→7" (unless a table has that name)
-    const diceF = !findTableByName(name) && parseFormula(name.trim());
-    if(diceF){
-      let sum = diceF.mod;
-      for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
-      return `${name.trim()}→${sum}`;
-    }
-    // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
-    // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
-    const tm = name.trim().match(/^@(?:terrain|gelände)\s*:\s*([^|]+?)\s*(?:\|\s*(.+))?$/i);
-    if(tm){
-      const cat = tm[1].trim(), fallback = (tm[2]||'').trim();
-      const ctx = currentTerrainContext();
-      const prefixes = terrainTablePrefixes(ctx);
-      if(!prefixes.length && fallback) prefixes.push(fallback);
-      if(!prefixes.length) return `${cat} [Gelände unbekannt — 📍 Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
-      const prefix = prefixes.find(p=>findTableByName(`${p}: ${cat}`));
-      if(!prefix) return `${cat} [keine Tabelle „${prefixes[0]}: ${cat}“]`;
-      const table = findTableByName(`${prefix}: ${cat}`);
-      if(visited.has(table.id)) return '[Zirkelverweis]';
-      const nextVisited = new Set(visited);
-      nextVisited.add(table.id);
-      return `${cat} (${prefix}) → ${rollTableCore(table, depth+1, nextVisited).text}`;
-    }
-    const table = findTableByName(name.trim());
-    if(!table) return `[${name.trim()} nicht gefunden]`;
+  const re = /\{\{([^{}]+)\}\}/g;
+  let out = text;
+  for(let pass=0; pass<20 && /\{\{[^{}]+\}\}/.test(out); pass++){
+    out = out.replace(re, (whole, name)=>resolveInlineRef(name, depth, visited));
+  }
+  return out;
+}
+function resolveInlineRef(name, depth, visited){
+  if(depth>5) return '[zu tief verschachtelt]';
+  // {{75%}} → roll d100 against it: "75% [W100: 23 ✔]"
+  const pct = name.trim().match(/^(\d{1,3})\s*%$/);
+  if(pct){
+    const roll = rollDie(100);
+    return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
+  }
+  // {{2d6}} → "2d6→7" (unless a table has that name)
+  const diceF = !findTableByName(name) && parseFormula(name.trim());
+  if(diceF){
+    let sum = diceF.mod;
+    for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
+    return `${name.trim()}→${sum}`;
+  }
+  // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
+  // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
+  const tm = name.trim().match(/^@(?:terrain|gelände)\s*:\s*([^|]+?)\s*(?:\|\s*(.+))?$/i);
+  if(tm){
+    const cat = tm[1].trim(), fallback = (tm[2]||'').trim();
+    const ctx = currentTerrainContext();
+    const prefixes = terrainTablePrefixes(ctx);
+    if(!prefixes.length && fallback) prefixes.push(fallback);
+    if(!prefixes.length) return `${cat} [Gelände unbekannt — 📍 Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
+    const prefix = prefixes.find(p=>findTableByName(`${p}: ${cat}`));
+    if(!prefix) return `${cat} [keine Tabelle „${prefixes[0]}: ${cat}“]`;
+    const table = findTableByName(`${prefix}: ${cat}`);
     if(visited.has(table.id)) return '[Zirkelverweis]';
     const nextVisited = new Set(visited);
     nextVisited.add(table.id);
-    const core = rollTableCore(table, depth+1, nextVisited);
-    return core.text;
-  });
+    return `${cat} (${prefix}) → ${rollTableCore(table, depth+1, nextVisited).text}`;
+  }
+  // {{Tomb|Tower|Palace}} → one of them, picked at random (unless a table has that name)
+  if(name.includes('|') && !findTableByName(name)){
+    const parts = name.split('|').map(p=>p.trim());
+    return parts[Math.floor(Math.random()*parts.length)];
+  }
+  const table = findTableByName(name.trim());
+  if(!table) return `[${name.trim()} nicht gefunden]`;
+  if(visited.has(table.id)) return '[Zirkelverweis]';
+  const nextVisited = new Set(visited);
+  nextVisited.add(table.id);
+  const core = rollTableCore(table, depth+1, nextVisited);
+  return core.text;
 }
 function rollTableCore(table, depth, visited){
-  const subs = table.subtables && table.subtables.length;
-  if(subs) inlineScopes.push(new Map(table.subtables.map((st,i)=>[st.name.trim().toLowerCase(), {...st, id:`${table.id}:sub${i}`, mode:'list'}])));
-  try{
-    return table.mode==='aspects' ? rollAspectsCore(table, depth, visited) : rollListCore(table, depth, visited);
-  } finally {
-    if(subs) inlineScopes.pop();
-  }
+  return table.mode==='aspects' ? rollAspectsCore(table, depth, visited) : rollListCore(table, depth, visited);
 }
 function rollListCore(table, depth, visited){
   const {entry, rollInfo} = pickEntry(table.entries, table.distMode, table.formula);
@@ -410,11 +405,11 @@ function runImport(){
   backupNow('Vor Tabellen-Import');
   updateActive(camp=>{
     const tables = [...camp.tables];
-    result.tables.forEach(({name, group, mode, distMode, formula, entries, aspects, subtables})=>{
+    result.tables.forEach(({name, group, mode, distMode, formula, entries, aspects})=>{
       group = (group||'').trim();
       const idx = tables.findIndex(t=>t.name.trim().toLowerCase()===name.trim().toLowerCase());
-      if(idx>=0) tables[idx] = Object.assign({}, tables[idx], {name, group, mode, distMode, formula, entries, aspects, subtables});
-      else tables.push({id:uid(), name, group, mode, distMode, formula, entries, aspects, subtables});
+      if(idx>=0) tables[idx] = Object.assign({}, tables[idx], {name, group, mode, distMode, formula, entries, aspects});
+      else tables.push({id:uid(), name, group, mode, distMode, formula, entries, aspects});
     });
     const karteien = [...camp.karteien];
     const tabOrder = [...camp.tabOrder];
@@ -436,7 +431,7 @@ function runImport(){
       const idx = characters.findIndex(c=>c.name.trim().toLowerCase()===name.trim().toLowerCase());
       const newSections = sections.map(s=>({
         id: uid(), name: s.name,
-        fields: s.fields.map(f=>({id:uid(), name:f.name, type:f.type, value:f.value})),
+        fields: s.fields.map(f=>({id:uid(), name:f.name, type:f.type, value:f.value, tier: f.tier || (f.type==='counter' || f.type==='spells' ? 'surface' : 'rare')})),
       }));
       if(idx>=0){
         const existing = characters[idx];
@@ -563,7 +558,7 @@ function setTerrainOverride(v){
   saveState(); render();
 }
 function findAreaTable(node){
-  return node && node.area ? findTableByName(node.area) : null;
+  return getActive().areasEnabled && node && node.area ? findTableByName(node.area) : null;
 }
 function rollAreaEncounter(){
   // The area always comes from the 📍 hex, even if the terrain is overridden.
@@ -604,7 +599,7 @@ function renderPositionPanel(){
     ${usesTerrain ? `<select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>` : ''}
     ${areaTable
       ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">🎲 Begegnung: ${escapeHtml(areaTable.name)}</button>`
-      : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes. Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.</p>`}
+      : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes.${active.areasEnabled ? ' Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.' : ''}</p>`}
   </div>`;
 }
 function renderDiceTab(){
@@ -691,7 +686,7 @@ function renderDiceTab(){
     }).join('');
   }
   if(ui.managing && active.tables.length>0){
-    html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
+    html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
   }
   html += `</div>`;
 
@@ -744,7 +739,7 @@ function renderImportModal(){
   return `<div class="modal-overlay"><div class="modal-sheet">
     <div class="row between"><span class="label" style="color:var(--gold);">Tabellen, Karteien &amp; Charaktere importieren (JSON)</span>
       <button class="icon-btn" onclick="cancelImport()">✕</button></div>
-    <p class="small-muted">Ein JSON-Array von Tabellen, Karteien und/oder Charakteren einfügen oder als Datei(en) auswählen — landen in der aktuellen Kampagne. Gibt es bereits eine Tabelle/Kartei/Charakter mit demselben Namen, werden Tabellen ersetzt, Karteien um neue Einträge ergänzt, bei Charakteren neue Bereiche hinzugefügt und gleichnamige Bereiche ersetzt. <code style="color:var(--gold);">{{Tabellenname}}</code> im Text setzt inline einen Wurf aus einer anderen Tabelle ein, <code style="color:var(--gold);">"links"</code> hängt einen kompletten Zusatz-Wurf an. Eine Kartei erkennt der Import an Einträgen mit <code style="color:var(--gold);">"title"</code>/<code style="color:var(--gold);">"notes"</code>, ein Charakter an <code style="color:var(--gold);">"sections"</code> mit <code style="color:var(--gold);">"fields"</code> (Typen: number, counter, text, list, status, table).</p>
+    <p class="small-muted">Ein JSON-Array von Tabellen, Karteien und/oder Charakteren einfügen oder als Datei(en) auswählen — landen in der aktuellen Kampagne. Gibt es bereits eine Tabelle/Kartei/Charakter mit demselben Namen, werden Tabellen ersetzt, Karteien um neue Einträge ergänzt, bei Charakteren neue Bereiche hinzugefügt und gleichnamige Bereiche ersetzt. <code style="color:var(--gold);">{{Tabellenname}}</code> im Text setzt inline einen Wurf aus einer anderen Tabelle ein, <code style="color:var(--gold);">"links"</code> hängt einen kompletten Zusatz-Wurf an. Eine Kartei erkennt der Import an Einträgen mit <code style="color:var(--gold);">"title"</code>/<code style="color:var(--gold);">"notes"</code>, ein Charakter an <code style="color:var(--gold);">"sections"</code> mit <code style="color:var(--gold);">"fields"</code> (Typen: number, counter, text, list, status, table, slots; optional <code style="color:var(--gold);">"tier"</code>: surface / scene / rare für die Kurzansicht).</p>
     <button class="btn btn-raised" onclick="triggerTableImport()">📁 Datei(en) auswählen (.json)</button>
     <textarea rows="16" placeholder='[
   {

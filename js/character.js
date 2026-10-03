@@ -302,7 +302,9 @@ function renderFieldControl(sectionId, f){
       <button class="counter-btn" onclick="incrementFieldCounter('${sectionId}','${f.id}',1)">+</button>
     </div>`;
   } else if(f.type==='text'){
-    return `<textarea rows="3" oninput="onFieldValueInput('${sectionId}','${f.id}',this)">${escapeHtml(f.value)}</textarea>`;
+    // Short values (class, race, …) get a one-line box; longer ones three lines.
+    const v = String(f.value||''), rows = (v.length>40 || v.includes('\n')) ? 3 : 1;
+    return `<textarea rows="${rows}" style="field-sizing:content;" oninput="onFieldValueInput('${sectionId}','${f.id}',this)">${escapeHtml(v)}</textarea>`;
   } else if(f.type==='list'){
     return `<div style="display:flex;flex-direction:column;gap:6px;">
       ${f.value.map((item,idx)=>`<div class="list-item-row"><span style="flex:1;font-size:14px;">${escapeHtml(item)}</span><button class="x-btn" onclick="removeListItem('${sectionId}','${f.id}',${idx})">✕</button></div>`).join('')}

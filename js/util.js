@@ -60,6 +60,13 @@ function defaultValueForType(type){
   if(type==='spells') return {levels:[{slots:1, prepared:[]}]};
   return '0';
 }
+// Older 'slots' fields (rows of boxes per spell level) become spell-slot
+// fields: each row's box count turns into that level's number of slots.
+function slotsToSpells(value){
+  const rows = Array.isArray(value) ? value : [];
+  const levels = rows.map(r=>({slots: Math.max(0, parseInt(r && r.max,10)||0), prepared:[]}));
+  return {levels: levels.length ? levels : [{slots:1, prepared:[]}]};
+}
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -255,13 +262,6 @@ function normalizeImportedEntry(e){
     links: Array.isArray(e.links) ? e.links.map(String) : [],
   };
 }
-// Embedded sub-tables of a table (see findLocalSubtable in oracle.js).
-function normalizeSubtables(list, normEntry){
-  return (Array.isArray(list) ? list : []).filter(st=>st && st.name).map(st=>({
-    name: String(st.name), distMode: st.distMode==='dist' ? 'dist' : 'equal', formula: st.formula || '',
-    entries: normEntry(st.entries || []),
-  }));
-}
 function parseJSONImport(raw){
   let data;
   try{ data = JSON.parse(raw); }catch(e){ return {error: 'Ungültiges JSON: '+e.message}; }
@@ -293,8 +293,8 @@ function parseJSONImport(raw){
         sections: t.sections.map(s=>({
           name: s.name || 'Bereich',
           fields: (s.fields||[]).map(f=>{
-            const type = ['number','counter','text','list','status','table','spells'].includes(f.type) ? f.type : 'text';
-            let value = f.value;
+            const type = f.type==='slots' ? 'spells' : (['number','counter','text','list','status','table','spells'].includes(f.type) ? f.type : 'text');
+            let value = f.type==='slots' ? slotsToSpells(f.value) : f.value;
             if(type==='status'){
               value = Array.isArray(value) && value.length===6 ? value : [false,false,false,false,false,false];
             } else if(type==='table'){
@@ -308,7 +308,8 @@ function parseJSONImport(raw){
             } else {
               value = value!=null ? String(value) : '0';
             }
-            return {name: f.name || 'Feld', type, value};
+            const tier = ['surface','scene','rare'].includes(f.tier) ? f.tier : undefined;
+            return {name: f.name || 'Feld', type, value, tier};
           }),
         })),
       });
@@ -322,8 +323,7 @@ function parseJSONImport(raw){
         formula: a.formula || '',
         options: (a.options||[]).map(normalizeImportedEntry),
       }));
-      tables.push({name: t.name || 'Unbenannt', group: t.group || '', mode, aspects, entries:[], distMode:'equal', formula:'',
-        subtables: normalizeSubtables(t.subtables, es=>es.map(normalizeImportedEntry))});
+      tables.push({name: t.name || 'Unbenannt', group: t.group || '', mode, aspects, entries:[], distMode:'equal', formula:''});
       return;
     }
     tables.push({
@@ -332,7 +332,6 @@ function parseJSONImport(raw){
       formula: t.formula || '',
       entries: (t.entries||[]).map(normalizeImportedEntry),
       aspects: [],
-      subtables: normalizeSubtables(t.subtables, es=>es.map(normalizeImportedEntry)),
     });
   });
   return {tables, karteien, characters};
