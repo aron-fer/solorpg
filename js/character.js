@@ -71,18 +71,20 @@ function moveField(sectionId, fieldId, dir){
 }
 function startEditSectionName(id){
   const s = getCurrentCharacter().sections.find(s=>s.id===id);
-  ui.editingSectionId=id; ui.sectionDraft={name:s.name, quick:s.quick||null};
+  ui.editingSectionId=id; ui.sectionDraft={name:s.name, quick:s.quick||null, sb:s.sb||null, sbAbbr:s.sbAbbr||''};
   render();
 }
 function cancelEditSection(){ ui.editingSectionId=null; render(); }
 function onSectionDraftName(el){ ui.sectionDraft.name = el.value; }
 function setSectionDraftQuick(v){ ui.sectionDraft.quick = v; render(); }
+function setSectionDraftSb(v){ ui.sectionDraft.sb = v; render(); }
+function onSectionDraftSbAbbr(el){ ui.sectionDraft.sbAbbr = el.value; }
 function saveSection(){
   const name = ui.sectionDraft.name.trim() || 'Unbenannter Bereich';
   if(ui.editingSectionId==='new'){
-    updateCurrentCharacter(c=>({...c, sections:[...c.sections, {id:uid(), name, collapsed:false, quick:ui.sectionDraft.quick||null, fields:[]}]}));
+    updateCurrentCharacter(c=>({...c, sections:[...c.sections, {id:uid(), name, collapsed:false, quick:ui.sectionDraft.quick||null, sb:ui.sectionDraft.sb||null, sbAbbr:(ui.sectionDraft.sbAbbr||'').trim(), sbCols:null, fields:[]}]}));
   } else {
-    updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===ui.editingSectionId?{...s,name,quick:ui.sectionDraft.quick||null}:s)}));
+    updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===ui.editingSectionId?{...s,name,quick:ui.sectionDraft.quick||null, sb:ui.sectionDraft.sb||null, sbAbbr:(ui.sectionDraft.sbAbbr||'').trim()}:s)}));
   }
   ui.editingSectionId=null; saveState(); render();
 }
@@ -94,10 +96,19 @@ function startNewField(sectionId){ ui.editingFieldId='new'; ui.editingFieldSecti
 function startEditField(sectionId, fieldId){
   const s = getCurrentCharacter().sections.find(s=>s.id===sectionId);
   const f = s.fields.find(f=>f.id===fieldId);
-  ui.editingFieldId=fieldId; ui.editingFieldSectionId=sectionId; ui.fieldDraft={name:f.name, type:f.type, tier:f.tier||'rare'};
+  ui.editingFieldId=fieldId; ui.editingFieldSectionId=sectionId; ui.fieldDraft={name:f.name, type:f.type, tier:f.tier||'rare', sb:f.sb||null, sbAbbr:f.sbAbbr||'', sbCols:f.sbCols||null, columns:(f.type==='table' && f.value && f.value.columns) || []};
   render();
 }
 function selectFieldTier(tier){ ui.fieldDraft.tier = tier; render(); }
+function selectFieldSb(v){ ui.fieldDraft.sb = v; render(); }
+function onFieldDraftSbAbbr(el){ ui.fieldDraft.sbAbbr = el.value; }
+function toggleFieldDraftSbCol(ci){
+  const all = ui.fieldDraft.columns.map((_,i)=>i);
+  const cur = ui.fieldDraft.sbCols || all;
+  const next = cur.includes(ci) ? cur.filter(i=>i!==ci) : [...cur, ci].sort((a,b)=>a-b);
+  ui.fieldDraft.sbCols = next.length===all.length ? null : next;
+  render();
+}
 function cancelEditField(){ ui.editingFieldId=null; render(); }
 function onFieldDraftName(el){ ui.fieldDraft.name = el.value; }
 function selectFieldType(type){ ui.fieldDraft.type = type; render(); }
@@ -105,17 +116,18 @@ function saveField(){
   const name = ui.fieldDraft.name.trim() || 'Unbenanntes Feld';
   const type = ui.fieldDraft.type;
   const tier = ui.fieldDraft.tier || 'rare';
+  const sbProps = {sb: ui.fieldDraft.sb||null, sbAbbr: (ui.fieldDraft.sbAbbr||'').trim(), sbCols: ui.fieldDraft.sbCols||null};
   updateCurrentCharacter(c=>({
     ...c,
     sections: c.sections.map(s=>{
       if(s.id!==ui.editingFieldSectionId) return s;
       if(ui.editingFieldId==='new'){
-        return {...s, fields:[...s.fields, {id:uid(), name, type, tier, value:defaultValueForType(type)}]};
+        return {...s, fields:[...s.fields, {id:uid(), name, type, tier, ...sbProps, value:defaultValueForType(type)}]};
       }
       return {...s, fields: s.fields.map(f=>{
         if(f.id!==ui.editingFieldId) return f;
         const typeChanged = f.type!==type;
-        return {...f, name, type, tier, value: typeChanged ? defaultValueForType(type) : f.value};
+        return {...f, name, type, tier, ...sbProps, value: typeChanged ? defaultValueForType(type) : f.value};
       })};
     }),
   }));
@@ -390,6 +402,7 @@ function renderCharacterTab(){
   if(currentChar){
     html += `<div class="mode-toggle">
       <button style="${ui.characterViewMode==='full'?'background:var(--gold);color:var(--bg);':''}" onclick="setCharacterViewMode('full')">Vollständig</button>
+      <button style="${ui.characterViewMode==='statblock'?'background:var(--gold);color:var(--bg);':''}" onclick="setCharacterViewMode('statblock')">Statblock</button>
       <button style="${ui.characterViewMode==='quick'?'background:var(--gold);color:var(--bg);':''}" onclick="setCharacterViewMode('quick')">Kurzansicht</button>
     </div>`;
   }
@@ -415,6 +428,10 @@ function renderCharacterTab(){
     return html;
   }
 
+  if(ui.characterViewMode==='statblock'){
+    html += renderCharacterStatblock(currentChar);
+    return html;
+  }
   if(ui.characterViewMode==='quick'){
     html += renderCharacterQuickView(currentChar);
     return html;
@@ -529,6 +546,12 @@ function renderSectionModal(){
       <button style="${ui.sectionDraft.quick==='scene'?'background:var(--gold);color:var(--bg);':''}" onclick="setSectionDraftQuick('scene')">Ganzer Bereich · pro Szene</button>
     </div>
     <p class="small-muted" style="margin:0;">„Ganzer Bereich" zeigt den Bereich in der Kurzansicht als eigenen Block mit allen Feldern — die Häufigkeit der einzelnen Felder zählt dann für diesen Bereich nicht.</p>
+    <span class="small-muted">Im Statblock:</span>
+    <div class="mode-toggle">
+      <button style="${!ui.sectionDraft.sb?'background:var(--gold);color:var(--bg);':''}" onclick="setSectionDraftSb(null)">Einzeln nach Feldern</button>
+      <button style="${ui.sectionDraft.sb==='line'?'background:var(--gold);color:var(--bg);':''}" onclick="setSectionDraftSb('line')">Ganzer Bereich als Zeile</button>
+    </div>
+    ${ui.sectionDraft.sb ? `<input type="text" value="${escapeHtml(ui.sectionDraft.sbAbbr||'')}" placeholder="Kürzel im Statblock, z.B. Saves (leer = ${escapeHtml(sbDefaultAbbr(ui.sectionDraft.name))})" oninput="onSectionDraftSbAbbr(this)">` : ''}
     <div class="row">
       ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteSection('${ui.editingSectionId}')">🗑 Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveSection()">✓ Speichern</button>
@@ -552,6 +575,15 @@ function renderFieldModal(){
       <button style="${ui.fieldDraft.tier==='scene'?'background:var(--gold);color:var(--bg);':''}" onclick="selectFieldTier('scene')">Pro Szene</button>
       <button style="${(!ui.fieldDraft.tier||ui.fieldDraft.tier==='rare')?'background:var(--gold);color:var(--bg);':''}" onclick="selectFieldTier('rare')">Selten</button>
     </div>
+    <span class="small-muted">Im Statblock:</span>
+    <div class="mode-toggle">
+      ${[[null,'—'],['title','Titelzeile'],['head','Kopfzeile'],['line','Eigene Zeile']].map(([v,l])=>`<button style="${(ui.fieldDraft.sb||null)===v?'background:var(--gold);color:var(--bg);':''}" onclick="selectFieldSb(${v?`'${v}'`:'null'})">${l}</button>`).join('')}
+    </div>
+    ${ui.fieldDraft.sb ? `<input type="text" value="${escapeHtml(ui.fieldDraft.sbAbbr||'')}" placeholder="Kürzel, z.B. AC (leer = ${escapeHtml(sbDefaultAbbr(ui.fieldDraft.name))})" oninput="onFieldDraftSbAbbr(this)">
+      <p class="small-muted" style="margin:0;">Titelzeile: neben dem Namen (Klasse, Stufe). Kopfzeile: kurze Werte wie HP, AC, MV — gleiches Kürzel wird zusammengefasst (HP 9/11).</p>` : ''}
+    ${ui.fieldDraft.sb && ui.fieldDraft.type==='table' && ui.fieldDraft.columns.length ? `<span class="small-muted">Spalten im Statblock:</span>
+      <div class="row wrap" style="gap:6px;">${ui.fieldDraft.columns.map((c,ci)=>{ const on = !ui.fieldDraft.sbCols || ui.fieldDraft.sbCols.includes(ci);
+        return `<button class="btn ${on?'btn-gold':'btn-raised'}" style="padding:4px 10px;font-size:12px;" onclick="toggleFieldDraftSbCol(${ci})">${escapeHtml(c||('Spalte '+(ci+1)))}</button>`; }).join('')}</div>` : ''}
     <div class="row">
       ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteField()">🗑 Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveField()">✓ Speichern</button>

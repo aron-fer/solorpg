@@ -430,8 +430,8 @@ function runImport(){
     result.characters.forEach(({name, sections})=>{
       const idx = characters.findIndex(c=>c.name.trim().toLowerCase()===name.trim().toLowerCase());
       const newSections = sections.map(s=>({
-        id: uid(), name: s.name,
-        fields: s.fields.map(f=>({id:uid(), name:f.name, type:f.type, value:f.value, tier: f.tier || (f.type==='counter' || f.type==='spells' ? 'surface' : 'rare')})),
+        id: uid(), name: s.name, sb: s.sb, sbAbbr: s.sbAbbr, quick: s.quick,
+        fields: s.fields.map(f=>({id:uid(), name:f.name, type:f.type, value:f.value, tier: f.tier || (f.type==='counter' || f.type==='spells' ? 'surface' : 'rare'), sb: f.sb, sbAbbr: f.sbAbbr, sbCols: f.sbCols})),
       }));
       if(idx>=0){
         const existing = characters[idx];

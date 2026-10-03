@@ -54,6 +54,13 @@ function ensureCampaign(data){
   }
   // Characters: backfill ids and give every field a reference tier (surface/scene/rare).
   // Counters default to surface since they're explicitly things that change during play.
+  // Statblock placement of a field/section (sb), its short label (sbAbbr) and,
+  // for table fields, which columns to show (sbCols, null = all).
+  const normSbProps = (x, places) => ({
+    sb: places.includes(x.sb) ? x.sb : null,
+    sbAbbr: typeof x.sbAbbr==='string' ? x.sbAbbr : '',
+    sbCols: Array.isArray(x.sbCols) ? x.sbCols.filter(Number.isInteger) : null,
+  });
   d.characters = (d.characters||[]).map(c=>({
     id: c.id||uid(), name: c.name||'Charakter',
     // Manual order of quick-view items: 'f:<fieldId>' / 's:<sectionId>'
@@ -62,7 +69,9 @@ function ensureCampaign(data){
       id: s.id||uid(), name: s.name||'Bereich', collapsed: !!s.collapsed,
       // Whole section in the quick view: null (per field) | 'surface' | 'scene'
       quick: (s.quick==='surface'||s.quick==='scene') ? s.quick : null,
+      ...normSbProps(s, ['line']),
       fields: (s.fields||[]).map(f=>({
+        ...normSbProps(f, ['title','head','line']),
         id: f.id||uid(), name: f.name||'Feld', type: f.type==='slots' ? 'spells' : (f.type||'text'), value: f.type==='slots' ? slotsToSpells(f.value) : f.value,
         tier: (f.tier==='surface'||f.tier==='scene'||f.tier==='rare') ? f.tier : (f.type==='counter' ? 'surface' : 'rare'),
       })),

@@ -291,7 +291,7 @@ function parseJSONImport(raw){
       characters.push({
         name: t.name || 'Unbenannt',
         sections: t.sections.map(s=>({
-          name: s.name || 'Bereich',
+          name: s.name || 'Bereich', sb: s.sb, sbAbbr: s.sbAbbr, quick: s.quick,
           fields: (s.fields||[]).map(f=>{
             const type = f.type==='slots' ? 'spells' : (['number','counter','text','list','status','table','spells'].includes(f.type) ? f.type : 'text');
             let value = f.type==='slots' ? slotsToSpells(f.value) : f.value;
@@ -309,7 +309,7 @@ function parseJSONImport(raw){
               value = value!=null ? String(value) : '0';
             }
             const tier = ['surface','scene','rare'].includes(f.tier) ? f.tier : undefined;
-            return {name: f.name || 'Feld', type, value, tier};
+            return {name: f.name || 'Feld', type, value, tier, sb: f.sb, sbAbbr: f.sbAbbr, sbCols: f.sbCols};
           }),
         })),
       });

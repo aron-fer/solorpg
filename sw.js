@@ -1,6 +1,6 @@
 // Network-first: when online you always get the latest files (no need to bump
 // a version after every edit); the cache is only the offline fallback.
-const CACHE_NAME = 'solorpg-v7';
+const CACHE_NAME = 'solorpg-v8';
 const ASSETS = [
   './',
   'index.html',
@@ -16,6 +16,7 @@ const ASSETS = [
   'js/links.js',
   'js/battle.js',
   'js/character.js',
+  'js/statblock.js',
   'js/journal.js',
   'js/terrain.js',
   'js/map.js',
