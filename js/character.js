@@ -141,12 +141,16 @@ function onFieldValueInput(sectionId, fieldId, el){
   updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f,value:el.value}:f)}:s)}));
   saveState();
 }
-function incrementFieldCounter(sectionId, fieldId, delta){
-  const s = getCurrentCharacter().sections.find(s=>s.id===sectionId);
-  const f = s.fields.find(f=>f.id===fieldId);
+// charId: another character than the open one (e.g. from the Kampf tab).
+function incrementFieldCounter(sectionId, fieldId, delta, charId){
+  const ch = charId ? getActive().characters.find(c=>c.id===charId) : getCurrentCharacter();
+  if(!ch) return;
+  const s = ch.sections.find(s=>s.id===sectionId);
+  const f = s && s.fields.find(f=>f.id===fieldId);
+  if(!f) return;
   const num = parseFloat(f.value);
   const newVal = String((isNaN(num)?0:num)+delta);
-  updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f,value:newVal}:f)}:s)}));
+  updateActive(camp=>({...camp, characters: camp.characters.map(c=>c.id!==ch.id ? c : {...c, sections: c.sections.map(s=>s.id===sectionId?{...s, fields:s.fields.map(f=>f.id===fieldId?{...f,value:newVal}:f)}:s)})}));
   saveState(); render();
 }
 function toggleStatusBox(sectionId, fieldId, boxIdx){

@@ -35,10 +35,24 @@ function ensureCampaign(data){
   if(!d.battleDice || !d.battleDice.length) d.battleDice = emptyCampaignData().battleDice;
   d.battleLog = Array.isArray(d.battleLog) ? d.battleLog : [];
   d.oracleDice = d.oracleDice.map(die=>({id:die.id||uid(), name:die.name||'', formula:die.formula||''}));
-  d.statblocks = (d.statblocks||[]).map(sb=>({
-    id: sb.id||uid(), name: sb.name!=null?sb.name:'', hp: sb.hp!=null?sb.hp:'10', notes: sb.notes||'',
-    statuses: (sb.statuses||[]).map(st=>({id:st.id||uid(), name:st.name||'Status', value: Array.isArray(st.value)&&st.value.length===6 ? st.value : [false,false,false,false,false,false]})),
-  }));
+  // Kampf tab: party members (kind 'pc', linked to a character) and enemy
+  // groups (kind 'enemy': stat line, specials, one HP pair per creature).
+  // Older statblocks had a single hp value — that becomes one creature.
+  d.statblocks = (d.statblocks||[]).map(sb=>{
+    const kind = sb.kind==='pc' ? 'pc' : 'enemy';
+    const members = Array.isArray(sb.members)
+      ? sb.members.map(m=>({id:m.id||uid(), hp: parseInt(m.hp,10)||0, max: parseInt(m.max,10)||0}))
+      : [{id:uid(), hp: parseInt(sb.hp,10)||0, max: parseInt(sb.hp,10)||0}];
+    return {
+      id: sb.id||uid(), kind, charId: kind==='pc' ? (sb.charId||null) : null,
+      name: sb.name!=null?sb.name:'', notes: sb.notes||'',
+      stats: Array.isArray(sb.stats) ? sb.stats.filter(x=>x && x.k).map(x=>({k:String(x.k), v:String(x.v==null?'':x.v)})) : [],
+      specials: sb.specials||'',
+      members: kind==='pc' ? [] : members,
+      statuses: (sb.statuses||[]).map(st=>({id:st.id||uid(), name:st.name||'Status', value: Array.isArray(st.value)&&st.value.length===6 ? st.value : [false,false,false,false,false,false]})),
+    };
+  });
+  d.battleRound = Math.max(1, parseInt(d.battleRound,10)||1);
   d.karteien = d.karteien.map(k=>({
     id:k.id||uid(), name:k.name||'Kartei', icon:k.icon||'📇', hasCheckbox: !!k.hasCheckbox,
     entries: (k.entries||[]).map(e=>({id:e.id||uid(), title:e.title||'', notes:e.notes||'', resolved:!!e.resolved, parentId:e.parentId||null, collapsed:!!e.collapsed})),
@@ -188,7 +202,7 @@ let ui = {
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
-  showStatblockCharPicker:false,
+  showStatblockCharPicker:false, battlePasteOpen:false, battlePasteText:'', battlePasteCount:'', battleEditId:null, battleTarget:{},
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,
   editingRelationEdgeId:null, relationEdgeDraft:null,

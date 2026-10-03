@@ -124,3 +124,14 @@ textarea { resize:none; font-family: Georgia, serif; }
 .sb-chip.cast { text-decoration:line-through; opacity:0.45; border-color:var(--border); }
 .sb-prep { width:130px; font-size:13px; padding:3px 6px; background:var(--bg); color:var(--text); border:1px dashed var(--gold-dim); border-radius:8px; }
 .sb-edit { margin-left:auto; }
+/* Kampf tab */
+.battle-row { padding:10px 12px; }
+.battle-enemy { gap:8px; }
+.battle-specials { font-size:13px; line-height:1.45; border-top:1px solid var(--border); padding-top:6px; }
+.battle-specials b { color:var(--text); font-weight:600; }
+.hp-chip { border:1px solid var(--border); border-radius:8px; padding:2px 8px; font-size:13px; color:var(--text); background:var(--panel-raised); }
+.hp-chip b { font-size:15px; }
+.hp-chip.sel { border-color:var(--gold); box-shadow:0 0 0 1px var(--gold); }
+.hp-chip.low { color:#E0A458; border-color:#8A5A1F; }
+.hp-chip.dead { text-decoration:line-through; opacity:0.45; }
+.battle-stats { font-size:14px; }
