@@ -378,18 +378,6 @@
         "name": "Equipment",
         "fields": [
           {
-            "name": "Rations (days)",
-            "type": "counter",
-            "tier": "scene",
-            "value": "0"
-          },
-          {
-            "name": "Torches / Oil Flasks",
-            "type": "counter",
-            "tier": "scene",
-            "value": "0"
-          },
-          {
             "name": "Weapons, Armour, Gear",
             "type": "list",
             "tier": "rare",

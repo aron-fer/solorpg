@@ -148,7 +148,6 @@ function toggleSlot(sectionId, fieldId, row, idx){
 function changeSlotMax(sectionId, fieldId, row, delta){
   updateSlots(sectionId, fieldId, rows=>{ rows[row].max += delta; return rows; });
 }
-function resetSlots(sectionId, fieldId){ updateSlots(sectionId, fieldId, rows=>rows.map(r=>({...r, used:0}))); }
 function addSlotRow(sectionId, fieldId){ updateSlots(sectionId, fieldId, rows=>[...rows, {label:'Stufe '+(rows.length+1), max:1, used:0}]); }
 function removeSlotRow(sectionId, fieldId, row){ updateSlots(sectionId, fieldId, rows=>rows.filter((_,i)=>i!==row)); }
 function onSlotLabelInput(sectionId, fieldId, row, el){
@@ -274,7 +273,6 @@ function renderFieldControl(sectionId, f){
     return `<div style="display:flex;flex-direction:column;gap:8px;">
       ${rows || '<p class="small-muted" style="margin:0;">Noch keine Kästchen — im Bearbeiten-Modus (⚙) mit + anlegen.</p>'}
       <div class="row" style="gap:6px;">
-        <button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="resetSlots(${args})">↺ Alle frei (Rast)</button>
         ${ui.managing ? `<button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="addSlotRow(${args})">+ Zeile</button>` : ''}
       </div>
     </div>`;
