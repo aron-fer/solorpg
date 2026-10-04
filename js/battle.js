@@ -117,8 +117,13 @@ function rollEnemyHp(hd){
   return Math.max(1, hp);
 }
 function makeMembers(hd, count){
-  return Array.from({length:count}, ()=>{ const hp = rollEnemyHp(hd); return {id:uid(), hp, max:hp}; });
+  return Array.from({length:count}, ()=>{ const hp = rollEnemyHp(hd), n = hdCount(hd); return {id:uid(), hp, max:hp, hd:n, hdMax:n}; });
 }
+// Enemies are tracked by HP or, per campaign setting, by hit dice.
+function enemyHdMode(){ return getActive().enemyTrack==='hd'; }
+function setEnemyTrack(mode){ updateActive(camp=>({...camp, enemyTrack:mode})); saveState(); render(); }
+function mCur(m){ return enemyHdMode() ? m.hd : m.hp; }
+function mMax(m){ return enemyHdMode() ? m.hdMax : m.max; }
 
 // ---- Enemies ----
 function toggleBattlePaste(){ ui.battlePasteOpen = !ui.battlePasteOpen; render(); }
@@ -131,14 +136,14 @@ function addEnemyFromPaste(){
   const count = parseInt(ui.battlePasteCount,10) > 0 ? parseInt(ui.battlePasteCount,10) : 1;
   const sb = {id:uid(), kind:'enemy', charId:null, name:p.name||'Gegner', notes:'', stats:p.stats, specials:p.specials, members:makeMembers(sbStatOf(p.stats,'HD'), count), statuses:[]};
   updateActive(camp=>({...camp, statblocks:[...camp.statblocks, sb]}));
-  pushLog(`${sb.name}: ${count}×, HP ${sb.members.map(m=>m.max).join(', ')}`, 'battle');
+  pushLog(enemyHdMode() ? `${sb.name}: ${count}×, HD ${sbStatOf(p.stats,'HD')||'?'}` : `${sb.name}: ${count}×, HP ${sb.members.map(m=>m.max).join(', ')}`, 'battle');
   ui.battlePasteOpen = false; ui.battlePasteText = ''; ui.battlePasteCount = '';
   saveState(); render();
 }
 function sbStatOf(stats, k){ const s = stats.find(x=>x.k===k); return s ? s.v : ''; }
 function addStatblock(){
   const id = uid();
-  updateActive(camp=>({...camp, statblocks:[...camp.statblocks, {id, kind:'enemy', charId:null, name:'Gegner', notes:'', stats:[{k:'AC',v:''},{k:'HD',v:'1'},{k:'ML',v:''}], specials:'', members:[{id:uid(), hp:4, max:4}], statuses:[]}]}));
+  updateActive(camp=>({...camp, statblocks:[...camp.statblocks, {id, kind:'enemy', charId:null, name:'Gegner', notes:'', stats:[{k:'AC',v:''},{k:'HD',v:'1'},{k:'ML',v:''}], specials:'', members:[{id:uid(), hp:4, max:4, hd:1, hdMax:1}], statuses:[]}]}));
   ui.battleEditId = id;
   saveState(); render();
 }
@@ -154,7 +159,7 @@ function onStatblockStatline(id, el){
 function selectBattleTarget(sbId, memberId){ ui.battleTarget[sbId] = memberId; render(); }
 function battleTargetOf(sb){
   const sel = sb.members.find(m=>m.id===ui.battleTarget[sb.id]);
-  return sel || sb.members.find(m=>m.hp>0) || sb.members[0];
+  return sel || sb.members.find(m=>mCur(m)>0) || sb.members[0];
 }
 // sign -1: damage, +1: healing (not above max).
 function applyBattleHp(sbId, sign){
@@ -164,7 +169,8 @@ function applyBattleHp(sbId, sign){
   if(!sb || !amount) return;
   const target = battleTargetOf(sb);
   if(!target) return;
-  updateStatblock(sbId, x=>({...x, members: x.members.map(m=>m.id!==target.id ? m : {...m, hp: sign<0 ? Math.max(0, m.hp-amount) : Math.min(m.max||m.hp+amount, m.hp+amount)})}));
+  const [cur, max] = enemyHdMode() ? ['hd','hdMax'] : ['hp','max'];
+  updateStatblock(sbId, x=>({...x, members: x.members.map(m=>m.id!==target.id ? m : {...m, [cur]: sign<0 ? Math.max(0, m[cur]-amount) : Math.min(m[max]||m[cur]+amount, m[cur]+amount)})}));
   ui.battleTarget[sbId] = target.id;
   saveState(); render();
 }
@@ -206,7 +212,7 @@ function deleteStatblock(id){
   saveState(); render();
 }
 function clearDefeatedEnemies(){
-  updateActive(camp=>({...camp, statblocks: camp.statblocks.filter(sb=>sb.kind==='pc' || sb.members.some(m=>m.hp>0))}));
+  updateActive(camp=>({...camp, statblocks: camp.statblocks.filter(sb=>sb.kind==='pc' || sb.members.some(m=>mCur(m)>0))}));
   saveState(); render();
 }
 
@@ -256,7 +262,8 @@ function renderSpecials(text){
 }
 function renderEnemyBlock(sb){
   const editing = ui.battleEditId===sb.id;
-  const alive = sb.members.filter(m=>m.hp>0).length;
+  const alive = sb.members.filter(m=>mCur(m)>0).length;
+  const hdMode = enemyHdMode(), [curKey, maxKey] = hdMode ? ['hd','hdMax'] : ['hp','max'];
   const target = battleTargetOf(sb);
   const xpEach = parseInt(String(sbStat(sb,'XP')).replace(/[^\d]/g,''),10) || 0;
   const defeated = sb.members.length - alive;
@@ -266,8 +273,9 @@ function renderEnemyBlock(sb){
   });
   const statLine = stats.filter(s=>s.v).map(s=>`<span class="sb-item${s.v.length>14?' sb-wrap':''}"><span class="sb-lbl">${escapeHtml(s.k)}</span> ${escapeHtml(s.v)}</span>`).join('<span class="sb-sep"> · </span>');
   const chips = sb.members.map((m,i)=>{
-    const dead = m.hp<=0, low = !dead && m.max && m.hp<=m.max/3, sel = target && m.id===target.id;
-    return `<button class="hp-chip${dead?' dead':''}${low?' low':''}${sel?' sel':''}" onclick="selectBattleTarget('${sb.id}','${m.id}')">${i+1} · <b>${m.hp}</b>/${m.max}</button>`;
+    const cur = mCur(m), max = mMax(m);
+    const dead = cur<=0, low = !dead && max && cur<=max/3, sel = target && m.id===target.id;
+    return `<button class="hp-chip${dead?' dead':''}${low?' low':''}${sel?' sel':''}" onclick="selectBattleTarget('${sb.id}','${m.id}')">${i+1} · ${hdMode?'HD ':''}<b>${cur}</b>/${max}</button>`;
   }).join('');
   return `<div class="panel battle-enemy">
     <div class="row" style="gap:8px;align-items:baseline;">
@@ -285,8 +293,9 @@ function renderEnemyBlock(sb){
     <div class="row wrap" style="gap:6px;">
       ${editing
         ? sb.members.map((m,i)=>`<span class="hp-chip" style="display:inline-flex;gap:4px;align-items:center;">${i+1}
-            <input type="number" value="${m.hp}" onchange="onMemberHp('${sb.id}','${m.id}','hp',this)" style="width:52px;padding:2px 4px;">/
-            <input type="number" value="${m.max}" onchange="onMemberHp('${sb.id}','${m.id}','max',this)" style="width:52px;padding:2px 4px;">
+${hdMode?' HD':''}
+            <input type="number" value="${m[curKey]}" onchange="onMemberHp('${sb.id}','${m.id}','${curKey}',this)" style="width:52px;padding:2px 4px;">/
+            <input type="number" value="${m[maxKey]}" onchange="onMemberHp('${sb.id}','${m.id}','${maxKey}',this)" style="width:52px;padding:2px 4px;">
             <button class="x-btn" onclick="removeEnemyMember('${sb.id}','${m.id}')">✕</button></span>`).join('')
           + `<button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="addEnemyMember('${sb.id}')">+ 1 (HD würfeln)</button>`
         : chips + (sb.members.length ? `<span class="row" style="gap:4px;margin-left:auto;">
@@ -348,9 +357,14 @@ function renderBattleTab(){
   }
   html += party.length ? party.map(renderPartyRow).join('') : `<p class="small-muted" style="margin:0;">Füge deine Charaktere hinzu — HP und Munition sind direkt mit dem Charakterbogen verbunden.</p>`;
 
-  const anyDefeated = enemies.some(sb=>sb.members.length && sb.members.every(m=>m.hp<=0));
+  const anyDefeated = enemies.some(sb=>sb.members.length && sb.members.every(m=>mCur(m)<=0));
+  const hdMode = active.enemyTrack==='hd';
   html += `<div class="row between" style="margin-top:6px;"><span class="label">Gegner</span>
     <div class="row" style="gap:6px;">
+      <div class="mode-toggle" title="Gegner nach Trefferpunkten oder Trefferwürfeln führen">
+        <button style="padding:4px 8px;${!hdMode?'background:var(--gold);color:var(--bg);':''}" onclick="setEnemyTrack('hp')">HP</button>
+        <button style="padding:4px 8px;${hdMode?'background:var(--gold);color:var(--bg);':''}" onclick="setEnemyTrack('hd')">HD</button>
+      </div>
       ${anyDefeated ? `<button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="clearDefeatedEnemies()">Besiegte entfernen</button>` : ''}
       <button class="btn ${ui.battlePasteOpen?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleBattlePaste()">Statblock einfügen</button>
       <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="addStatblock()">+ Leer</button>

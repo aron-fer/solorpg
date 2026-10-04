@@ -52,6 +52,13 @@ function timeNow(){
   const d = new Date();
   return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
 }
+// Whole hit dice of a stat like "4+4" → 4, "½" → 1 (for HD-based enemy tracking).
+function hdCount(hd){
+  const t = String(hd||'').trim();
+  if(/^(½|1\/2)/.test(t)) return 1;
+  const m = t.match(/^(\d+)/);
+  return m ? Math.max(1, parseInt(m[1],10)) : 1;
+}
 function defaultValueForType(type){
   if(type==='list') return [];
   if(type==='text') return '';
