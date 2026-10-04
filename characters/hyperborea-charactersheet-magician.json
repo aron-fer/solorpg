@@ -304,12 +304,6 @@
             }
           },
           {
-            "name": "Memorized Spells",
-            "type": "list",
-            "tier": "scene",
-            "value": []
-          },
-          {
             "name": "Spell Scrolls",
             "type": "list",
             "tier": "scene",

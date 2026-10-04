@@ -40,9 +40,12 @@ function ensureCampaign(data){
   // Older statblocks had a single hp value — that becomes one creature.
   d.statblocks = (d.statblocks||[]).map(sb=>{
     const kind = sb.kind==='pc' ? 'pc' : 'enemy';
+    // Each creature also tracks hit dice (hd/hdMax) for the "HD instead of HP" mode.
+    const hdStat = Array.isArray(sb.stats) ? ((sb.stats.find(x=>x && x.k==='HD')||{}).v) : '';
+    const hdOf = (m, k) => m[k]!=null && !isNaN(parseInt(m[k],10)) ? Math.max(0, parseInt(m[k],10)) : hdCount(hdStat);
     const members = Array.isArray(sb.members)
-      ? sb.members.map(m=>({id:m.id||uid(), hp: parseInt(m.hp,10)||0, max: parseInt(m.max,10)||0}))
-      : [{id:uid(), hp: parseInt(sb.hp,10)||0, max: parseInt(sb.hp,10)||0}];
+      ? sb.members.map(m=>({id:m.id||uid(), hp: parseInt(m.hp,10)||0, max: parseInt(m.max,10)||0, hd: hdOf(m,'hd'), hdMax: hdOf(m,'hdMax')}))
+      : [{id:uid(), hp: parseInt(sb.hp,10)||0, max: parseInt(sb.hp,10)||0, hd: hdCount(hdStat), hdMax: hdCount(hdStat)}];
     return {
       id: sb.id||uid(), kind, charId: kind==='pc' ? (sb.charId||null) : null,
       name: sb.name!=null?sb.name:'', notes: sb.notes||'', desc: sb.desc||'',
@@ -53,6 +56,7 @@ function ensureCampaign(data){
     };
   });
   d.battleRound = Math.max(1, parseInt(d.battleRound,10)||1);
+  d.enemyTrack = d.enemyTrack==='hd' ? 'hd' : 'hp';
   d.karteien = d.karteien.map(k=>({
     id:k.id||uid(), name:k.name||'Kartei', icon:k.icon||'📇', hasCheckbox: !!k.hasCheckbox,
     entries: (k.entries||[]).map(e=>({id:e.id||uid(), title:e.title||'', notes:e.notes||'', resolved:!!e.resolved, parentId:e.parentId||null, collapsed:!!e.collapsed})),

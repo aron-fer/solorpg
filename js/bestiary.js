@@ -129,7 +129,7 @@ function addEnemyFromBestiary(){
   const count = Math.max(1, parseInt(ui.bestiaryCount,10)||1);
   const sb = {id:uid(), kind:'enemy', charId:null, name:it.name, notes:'', desc:it.desc, stats:p.stats, specials:p.specials, members:makeMembers(sbStatOf(p.stats,'HD'), count), statuses:[]};
   updateActive(camp=>({...camp, statblocks:[...camp.statblocks, sb]}));
-  pushLog(`${sb.name}: ${count}×, HP ${sb.members.map(m=>m.max).join(', ')}`, 'battle');
+  pushLog(enemyHdMode() ? `${sb.name}: ${count}×, HD ${sbStatOf(p.stats,'HD')||'?'}` : `${sb.name}: ${count}×, HP ${sb.members.map(m=>m.max).join(', ')}`, 'battle');
   ui.bestiaryPick = null; ui.bestiaryDice = ''; ui.bestiaryCount = '';
   saveState(); render();
 }
