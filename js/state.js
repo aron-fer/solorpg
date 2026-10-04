@@ -45,7 +45,7 @@ function ensureCampaign(data){
       : [{id:uid(), hp: parseInt(sb.hp,10)||0, max: parseInt(sb.hp,10)||0}];
     return {
       id: sb.id||uid(), kind, charId: kind==='pc' ? (sb.charId||null) : null,
-      name: sb.name!=null?sb.name:'', notes: sb.notes||'',
+      name: sb.name!=null?sb.name:'', notes: sb.notes||'', desc: sb.desc||'',
       stats: Array.isArray(sb.stats) ? sb.stats.filter(x=>x && x.k).map(x=>({k:String(x.k), v:String(x.v==null?'':x.v)})) : [],
       specials: sb.specials||'',
       members: kind==='pc' ? [] : members,
@@ -203,6 +203,7 @@ let ui = {
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
   showStatblockCharPicker:false, battlePasteOpen:false, battlePasteText:'', battlePasteCount:'', battleEditId:null, battleTarget:{},
+  bestiaryOpen:false, bestiaryPick:null, bestiaryQuery:'', bestiaryDice:'', bestiaryCount:'',
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,
   editingRelationEdgeId:null, relationEdgeDraft:null,

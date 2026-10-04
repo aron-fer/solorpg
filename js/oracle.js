@@ -502,7 +502,7 @@ function renderResultsPanel(spanClass, ctx){
           const isLatest = idx === 0;
           return `<div class="log-entry ${isLatest?'latest':''}">
             <span class="log-time">${entry.time}</span>
-            <span class="log-text">${escapeHtml(entry.text)}</span>
+            <span class="log-text">${escapeHtml(entry.text)}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</span>
           </div>`;
         }).join('')
       + `</div>`;

@@ -85,16 +85,24 @@ const SB_KEYS = ['#E','AL','SZ','MV','DX','AC','HD','#A','D','SV','ML','XP','TC'
 // "Ape-Man: #E 1d6 (6d6) | AL N | … | XP 24* | TC L | Special: Climb: …"
 function parseEnemyStatblock(raw){
   let text = String(raw||'').replace(/\r/g,'')
-    .replace(/(\w)-\n\s*(\w)/g,'$1$2')       // hyphenated line breaks from the PDF
-    .replace(/\s*\n\s*/g,' ').replace(/\s+/g,' ').trim();
+    .replace(/(\w)-\n\s*(\w)/g,'$1$2');      // hyphenated line breaks from the PDF
   let name = '', specials = '';
+  // Specials keep their line breaks (one ability per line, "• Climb: …");
+  // wrapped lines that don't start a new ability are joined.
+  const sp = text.match(/\|?\s*Special:\s*([\s\S]*)$/i);
+  if(sp){
+    specials = sp[1].split('\n').map(l=>l.trim()).filter(Boolean)
+      .reduce((out,l)=>{ if(out.length && !/^(•|[-*]\s|[A-Z][\w'’ -]{1,30}:)/.test(l)) out[out.length-1] += ' '+l; else out.push(l); return out; }, [])
+      .join('\n');
+    text = text.slice(0, sp.index);
+  }
+  text = text.replace(/\s+/g,' ').trim();
   const nm = text.match(/^([^|:]{1,60}?):\s*(?=#E|AL |SZ |MV |AC |HD )/);
   if(nm){ name = nm[1].trim(); text = text.slice(nm[0].length); }
-  const sp = text.match(/\|?\s*Special:\s*(.*)$/i);
-  if(sp){ specials = sp[1].trim(); text = text.slice(0, sp.index); }
   // Line breaks in the book can swallow the "|" ("MV 30 DX 10"): put it back
   // before every key except the one-letter D.
-  text = text.replace(/\s(?=(?:#E|AL|SZ|MV|DX|AC|HD|#A|SV|ML|XP|TC)\s)/g, ' | ');
+  text = text.replace(/\s(?=(?:#E|AL|SZ|MV|DX|AC|HD|#A|SV|ML|XP|TC)\s)/g, ' | ')
+    .replace(/\s(?=D\s+[\d(])/g, ' | ');   // D only before dice or "(per weapon …)" 
   const keyRe = new RegExp(`^(${SB_KEYS.map(k=>k.replace('#','\\#')).join('|')})\\s+(.+)$`);
   const stats = [];
   text.split('|').map(p=>p.trim()).filter(Boolean).forEach(p=>{
@@ -252,7 +260,7 @@ function clearStatblockStatus(sbId, statusId){
 const SB_SHOW_ORDER = ['#E','AC','HD','MV','DX','#A','D','SV','ML','AL','SZ','XP','TC'];
 function renderSpecials(text){
   // "Climb: 11-in-12 … Shamanism: …" → ability names in bold.
-  return escapeHtml(text).replace(/(^|[.)]\s+)([A-Z][A-Za-z'’ -]{1,30}?):/g, '$1<b>$2:</b>');
+  return escapeHtml(text).replace(/(^|[.)]\s+|•\s*)([A-Z][A-Za-z'’ -]{1,30}?):/gm, '$1<b>$2:</b>');
 }
 function renderEnemyBlock(sb){
   const editing = ui.battleEditId===sb.id;
@@ -296,6 +304,7 @@ function renderEnemyBlock(sb){
           </span>` : '')}
     </div>
     ${!editing && sb.specials ? `<div class="small-muted battle-specials">${renderSpecials(sb.specials)}</div>` : ''}
+    ${!editing && sb.desc ? `<details><summary class="small-muted" style="cursor:pointer;">Beschreibung</summary><div class="battle-desc">${escapeHtml(sb.desc)}</div></details>` : ''}
     ${!editing && xpEach && defeated ? `<span class="small-muted">XP: ${defeated} × ${xpEach} = ${defeated*xpEach}</span>` : ''}
     ${editing || sb.notes ? `<textarea rows="2" placeholder="Notizen" oninput="onStatblockNotes('${sb.id}',this)" ${editing?'':'readonly'}>${escapeHtml(sb.notes)}</textarea>` : ''}
     ${(sb.statuses||[]).length || editing ? `<div style="display:flex;flex-direction:column;gap:8px;">
@@ -352,9 +361,11 @@ function renderBattleTab(){
   html += `<div class="row between" style="margin-top:6px;"><span class="label">Gegner</span>
     <div class="row" style="gap:6px;">
       ${anyDefeated ? `<button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="clearDefeatedEnemies()">Besiegte entfernen</button>` : ''}
-      <button class="btn ${ui.battlePasteOpen?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleBattlePaste()">Statblock einfügen</button>
+      <button class="btn ${ui.bestiaryOpen?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleBestiaryPanel()">Bestiarium</button>
+      <button class="btn ${ui.battlePasteOpen?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleBattlePaste()">Einfügen</button>
       <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="addStatblock()">+ Leer</button>
     </div></div>`;
+  if(ui.bestiaryOpen) html += renderBestiaryPanel();
   if(ui.battlePasteOpen){
     html += `<div class="panel" style="gap:8px;">
       <span class="small-muted">Statblock aus dem Buch hineinkopieren, z.B. „Ape-Man: #E 1d6 (6d6) | AL N | SZ M | MV 30 | DX 10 | AC 8 | HD 1+2 | #A 1/1 (weapon) | D (per weapon +1) | SV 16 | ML 9 | XP 24 | Special: Climb: …"</span>
