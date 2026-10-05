@@ -1,5 +1,11 @@
 # Hinweise für Claude
 
+## Nur App-Code in diesem Repo
+
+Dieses Repo ist öffentlich und enthält nur die App selbst. Tabellen, Karteien
+(z. B. Bestiarium), Charakterbögen und andere Spieldaten gehören nach
+`aron-fer/solo-procedures` unter `app/`, nicht hierher.
+
 ## Import-Format dokumentiert im privaten Repo
 
 Das JSON-Import-Format (Tabellen, Karteien, Charaktere) ist in
