@@ -20,6 +20,7 @@ const ASSETS = [
   'js/statblock.js',
   'js/journal.js',
   'js/terrain.js',
+  'js/turns.js',
   'js/map.js',
   'js/relations.js',
   'js/shell.js',

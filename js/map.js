@@ -531,6 +531,7 @@ function renderMapTab(){
   let html = `<div class="pill-scroll">`;
   html += active.maps.map(m=>`<button class="pill ${cur&&m.id===cur.id?'active':'inactive'}" onclick="setActiveMapId('${m.id}')">${escapeHtml(m.name)}</button>`).join('');
   html += `<button class="icon-btn raised" style="border-radius:999px;" onclick="addMap()">+</button>`;
+  if(cur) html += `<button class="icon-btn ${cur.turns&&cur.turns.on?'active':'raised'}" style="border-radius:999px;margin-left:auto;font-size:13px;padding:6px 10px;" onclick="toggleTurnTracker()" title="Turn-Tracker für diese Karte ein/aus">⏳ Turns</button>`;
   html += `</div>`;
 
   if(!cur){
@@ -590,6 +591,7 @@ function renderMapTab(){
       ? '🔗 Tippe den Raum, der verbunden werden soll (leere Stelle = abbrechen).'
       : (cur.grid==='hex' ? 'Leere Stelle tippen = neues Feld.' : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.')}</p>`;
   }
+  html += renderTurnTracker(cur);
   html += `<div class="panel" id="map-panel" style="padding:6px;gap:6px;">
     <div class="map-svg-wrap" ${zoomWrapAttrs('map')}></div>
     <div class="row" style="gap:4px;justify-content:flex-end;">${zoomControlsHtml('map','Ganze Karte zeigen')}</div>

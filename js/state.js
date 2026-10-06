@@ -112,6 +112,7 @@ function ensureCampaign(data){
       type: e.type==='secret' ? 'secret' : 'open',
       oneway: !!e.oneway,
     })),
+    turns: m.turns || null,   // turn tracker, normalised in turns.js
   }));
   // Square-grid rooms used to snap to line crossings; they now sit in cell
   // centres. Move old crossing-snapped rooms half a cell, once per map.
