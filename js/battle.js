@@ -6,16 +6,6 @@ function updateStatblock(id, fn){
   updateActive(camp=>({...camp, statblocks: camp.statblocks.map(sb=>sb.id===id ? fn(sb) : sb)}));
 }
 
-// ---- Round & initiative ----
-function nextBattleRound(){ updateActive(camp=>({...camp, battleRound:(camp.battleRound||1)+1})); saveState(); render(); }
-function resetBattleRound(){ updateActive(camp=>({...camp, battleRound:1})); saveState(); render(); }
-function rollSideInitiative(){
-  const party = rollDie(6), enemies = rollDie(6);
-  const who = party>enemies ? 'Party zuerst' : enemies>party ? 'Gegner zuerst' : 'Gleichzeitig';
-  pushLog(`Initiative (Runde ${getActive().battleRound}): Party d6→${party} · Gegner d6→${enemies} — ${who}`, 'battle');
-  render();
-}
-
 // ---- Party ----
 function toggleStatblockCharPicker(){ ui.showStatblockCharPicker = !ui.showStatblockCharPicker; render(); }
 function addStatblockFromCharacter(charId){
@@ -100,14 +90,15 @@ function parseEnemyStatblock(raw){
   const nm = text.match(/^([^|:]{1,60}?):\s*(?=#E|AL |SZ |MV |AC |HD )/);
   if(nm){ name = nm[1].trim(); text = text.slice(nm[0].length); }
   // Line breaks in the book can swallow the "|" ("MV 30 DX 10"): put it back
-  // before every key except the one-letter D.
-  text = text.replace(/\s(?=(?:#E|AL|SZ|MV|DX|AC|HD|#A|SV|ML|XP|TC)\s)/g, ' | ')
-    .replace(/\s(?=D\s+[\d(])/g, ' | ');   // D only before dice or "(per weapon …)" 
-  const keyRe = new RegExp(`^(${SB_KEYS.map(k=>k.replace('#','\\#')).join('|')})\\s+(.+)$`);
+  // before every key except the one-letter D. A comma before a key also
+  // separates ("AC 5, HD 3"); commas inside values ("XP 2,700", "TC C, Q") stay.
+  text = text.replace(/[\s,]+(?=(?:#E|AL|SZ|MV|DX|AC|HD|#A|SV|ML|XP|TC)(?:\s|$))/g, ' | ')
+    .replace(/[\s,]+(?=D\s+[\d(])/g, ' | ');   // D only before dice or "(per weapon …)"
+  const keyRe = new RegExp(`^(${SB_KEYS.map(k=>k.replace('#','\\#')).join('|')})(?:\\s+(.*))?$`);
   const stats = [];
-  text.split('|').map(p=>p.trim()).filter(Boolean).forEach(p=>{
+  text.split('|').map(p=>p.replace(/^[\s,]+|[\s,]+$/g,'')).filter(Boolean).forEach(p=>{
     const m = p.match(keyRe);
-    if(m) stats.push({k:m[1], v:m[2].trim()});
+    if(m) stats.push({k:m[1], v:(m[2]||'').trim()});   // a bare key ("ML") stays its own, empty stat
     else if(stats.length) stats[stats.length-1].v += ' ' + p;   // stray piece of the previous value
   });
   return {name, stats, specials};
@@ -182,6 +173,10 @@ function applyBattleHp(sbId, sign){
   ui.battleTarget[sbId] = target.id;
   saveState(); render();
 }
+function stepBattleDmg(sbId, d){
+  const input = document.getElementById('dmg-'+sbId);
+  if(input) input.value = Math.max(1, (parseInt(input.value,10)||0) + d);
+}
 function onMemberHp(sbId, memberId, field, el){
   const v = Math.max(0, parseInt(el.value,10)||0);
   updateStatblock(sbId, sb=>({...sb, members: sb.members.map(m=>m.id===memberId ? {...m, [field]:v} : m)}));
@@ -194,13 +189,6 @@ function addEnemyMember(sbId){
 function removeEnemyMember(sbId, memberId){
   updateStatblock(sbId, sb=>({...sb, members: sb.members.filter(m=>m.id!==memberId)}));
   saveState(); render();
-}
-function rollMorale(sbId){
-  const sb = getActive().statblocks.find(x=>x.id===sbId);
-  const ml = parseInt(sbStat(sb,'ML'),10);
-  const r = rollDie(6)+rollDie(6);
-  pushLog(`Moral ${sb.name}: 2d6→${r}${ml ? ` gegen ML ${ml} — ${r<=ml ? 'hält stand' : 'Moral bricht (Flucht/Aufgabe)'}` : ' (kein ML angegeben)'}`, 'battle');
-  render();
 }
 function duplicateStatblock(id){
   updateActive(camp=>{
@@ -289,11 +277,10 @@ function renderEnemyBlock(sb){
     <div class="row" style="gap:8px;align-items:baseline;">
       ${editing ? `<input type="text" value="${escapeHtml(sb.name)}" placeholder="Name" oninput="onStatblockName('${sb.id}',this)" style="flex:1;font-weight:600;">`
         : `<span class="sb-name" style="font-size:17px;">${escapeHtml(sb.name||'Gegner')}</span><span class="small-muted">${sb.members.length>1 ? `${alive}/${sb.members.length}` : (alive ? '' : 'besiegt')}</span><span style="flex:1;"></span>`}
-      <button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="rollMorale('${sb.id}')">Moral 2d6</button>
       <button class="icon-btn" onclick="toggleBattleEdit('${sb.id}')" title="Bearbeiten">${editing?'✓':'⋯'}</button>
     </div>
     ${editing
-      ? `<span class="small-muted">Statzeile (wie im Buch, mit | getrennt):</span>
+      ? `<span class="small-muted">Statzeile (wie im Buch, mit | oder Komma getrennt):</span>
          <textarea rows="2" oninput="onStatblockStatline('${sb.id}',this)">${escapeHtml(sb.stats.map(s=>`${s.k} ${s.v}`).join(' | '))}</textarea>
          <span class="small-muted">Specials:</span>
          <textarea rows="3" oninput="onStatblockSpecials('${sb.id}',this)">${escapeHtml(sb.specials)}</textarea>`
@@ -307,7 +294,9 @@ ${hdMode?' HD':''}
             <button class="x-btn" onclick="removeEnemyMember('${sb.id}','${m.id}')">✕</button></span>`).join('')
           + `<button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="addEnemyMember('${sb.id}')">+ 1 (HD würfeln)</button>`
         : chips + (sb.members.length ? `<span class="row" style="gap:4px;margin-left:auto;">
+            <button class="sb-step" onclick="stepBattleDmg('${sb.id}',-1)" aria-label="−1">−</button>
             <input type="number" min="1" id="dmg-${sb.id}" placeholder="${target?`#${sb.members.indexOf(target)+1}`:''}" style="width:58px;padding:4px 6px;" onkeydown="if(event.key==='Enter'){applyBattleHp('${sb.id}',-1);}">
+            <button class="sb-step" onclick="stepBattleDmg('${sb.id}',1)" aria-label="+1">+</button>
             <button class="btn btn-outline-wax" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',-1)">Schaden</button>
             <button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',1)">Heilen</button>
           </span>` : '')}
@@ -348,13 +337,6 @@ function renderBattleTab(){
   html += renderResultsPanel('span-all', 'battle');
   html += renderDiceRollerPanel('battle');
   html += `</div>`;
-
-  html += `<div class="row wrap" style="gap:8px;align-items:center;">
-    <span class="sb-name" style="font-size:17px;">Runde ${active.battleRound||1}</span>
-    <button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="nextBattleRound()">Nächste Runde</button>
-    <button class="btn btn-raised" style="padding:4px 10px;font-size:12px;" onclick="rollSideInitiative()">Initiative d6</button>
-    ${(active.battleRound||1)>1 ? `<button class="icon-btn" onclick="resetBattleRound()" title="Runde zurücksetzen">↺</button>` : ''}
-  </div>`;
 
   html += `<div class="row between"><span class="label">Party</span>
     <button class="btn ${ui.showStatblockCharPicker?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleStatblockCharPicker()">+ Charakter</button></div>`;
