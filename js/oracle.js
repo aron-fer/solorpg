@@ -66,12 +66,20 @@ function resolveInlineRef(name, depth, visited){
     const roll = rollDie(100);
     return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
   }
-  // {{2d6}} → "2d6→7" (unless a table has that name)
-  const diceF = !findTableByName(name) && parseFormula(name.trim());
-  if(diceF){
-    let sum = diceF.mod;
-    for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
-    return `${name.trim()}→${sum}`;
+  // {{25%: 3d10×100 gp}} → the text with 25% chance, else "—". Nested {{…}}
+  // inside are already resolved (innermost first).
+  const cond = name.trim().match(/^(\d{1,3})\s*%\s*:\s*([\s\S]*)$/);
+  if(cond) return rollDie(100) <= parseInt(cond[1],10) ? cond[2].trim() : '—';
+  // {{2d6}} → "2d6→7", {{3d10×100}} → "3d10×100→1800" (unless a table has that name)
+  if(!findTableByName(name)){
+    const mm = name.trim().match(/^(.+?)\s*[×x*]\s*(\d+)$/i);
+    const diceF = parseFormula(mm ? mm[1] : name.trim());
+    if(diceF){
+      let sum = diceF.mod;
+      for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
+      if(mm) sum *= parseInt(mm[2],10);
+      return `${name.trim()}→${sum}`;
+    }
   }
   // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
   // {{@terrain: ANIMAL | Forest}} uses Forest when no terrain is known.
@@ -686,7 +694,7 @@ function renderDiceTab(){
     }).join('');
   }
   if(ui.managing && active.tables.length>0){
-    html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
+    html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, <code style="color:var(--gold);">{{25%: Text}}</code> zeigt den Text mit 25 % Chance, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
   }
   html += `</div>`;
 
