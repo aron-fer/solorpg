@@ -71,7 +71,7 @@ function openCharacterStatblock(charId){
 }
 
 // ---- Enemy statblock parsing ----
-const SB_KEYS = ['#E','AL','SZ','MV','DX','AC','HD','#A','D','SV','ML','XP','TC'];
+const SB_KEYS = ['#E','AL','SZ','MV','DX','AC','HD','FA','CA','#A','D','SV','ML','XP','TC'];
 // "Ape-Man: #E 1d6 (6d6) | AL N | … | XP 24* | TC L | Special: Climb: …"
 function parseEnemyStatblock(raw){
   let text = String(raw||'').replace(/\r/g,'')
@@ -92,7 +92,7 @@ function parseEnemyStatblock(raw){
   // Line breaks in the book can swallow the "|" ("MV 30 DX 10"): put it back
   // before every key except the one-letter D. A comma before a key also
   // separates ("AC 5, HD 3"); commas inside values ("XP 2,700", "TC C, Q") stay.
-  text = text.replace(/[\s,]+(?=(?:#E|AL|SZ|MV|DX|AC|HD|#A|SV|ML|XP|TC)(?:\s|$))/g, ' | ')
+  text = text.replace(/[\s,]+(?=(?:#E|AL|SZ|MV|DX|AC|HD|FA|CA|#A|SV|ML|XP|TC)(?:\s|$))/g, ' | ')
     .replace(/[\s,]+(?=D\s+[\d(])/g, ' | ');   // D only before dice or "(per weapon …)"
   const keyRe = new RegExp(`^(${SB_KEYS.map(k=>k.replace('#','\\#')).join('|')})(?:\\s+(.*))?$`);
   const stats = [];
@@ -251,7 +251,7 @@ function clearStatblockStatus(sbId, statusId){
 }
 
 // ---- Rendering ----
-const SB_SHOW_ORDER = ['#E','AC','HD','MV','DX','#A','D','SV','ML','AL','SZ','XP','TC'];
+const SB_SHOW_ORDER = ['#E','AC','HD','FA','CA','MV','DX','#A','D','SV','ML','AL','SZ','XP','TC'];
 function renderSpecials(text){
   // "Climb: 11-in-12 … Shamanism: …" → ability names in bold.
   return escapeHtml(text).replace(/(^|[.)]\s+|•\s*)([A-Z][A-Za-z'’ -]{1,30}?):/gm, '$1<b>$2:</b>');
