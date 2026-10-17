@@ -303,7 +303,7 @@ function deleteMapNode(id){
 }
 function startNewMapEdge(fromId, toId){
   ui.editingMapEdgeId = 'new';
-  ui.mapEdgeDraft = {from:fromId, to:toId, type:'open', oneway:false};
+  ui.mapEdgeDraft = {from:fromId, to:toId, type:'open', oneway:false, label:'', desc:''};
   render();
 }
 function startEditMapEdge(id){
@@ -311,7 +311,7 @@ function startEditMapEdge(id){
   const e = cur && cur.edges.find(x=>x.id===id);
   if(!e) return;
   ui.editingMapEdgeId = id;
-  ui.mapEdgeDraft = {from:e.from, to:e.to, type:e.type, oneway:e.oneway};
+  ui.mapEdgeDraft = {from:e.from, to:e.to, type:e.type, oneway:e.oneway, label:e.label||'', desc:e.desc||''};
   render();
 }
 function cancelMapEdgeModal(){ ui.editingMapEdgeId=null; ui.mapEdgeDraft=null; render(); }
@@ -321,10 +321,10 @@ function saveMapEdge(){
   const d = ui.mapEdgeDraft;
   if(ui.editingMapEdgeId==='new'){
     const id = uid();
-    updateCurrentMap(m=>({...m, edges:[...m.edges, {id, from:d.from, to:d.to, type:d.type, oneway:d.oneway}]}));
+    updateCurrentMap(m=>({...m, edges:[...m.edges, {id, from:d.from, to:d.to, type:d.type, oneway:d.oneway, label:(d.label||'').trim(), desc:d.desc||''}]}));
   } else {
     const id = ui.editingMapEdgeId;
-    updateCurrentMap(m=>({...m, edges: m.edges.map(e=>e.id===id?{...e, type:d.type, oneway:d.oneway}:e)}));
+    updateCurrentMap(m=>({...m, edges: m.edges.map(e=>e.id===id?{...e, type:d.type, oneway:d.oneway, label:(d.label||'').trim(), desc:d.desc||''}:e)}));
   }
   ui.editingMapEdgeId=null; ui.mapEdgeDraft=null;
   saveState(); render();
@@ -406,13 +406,24 @@ function mapEdgesMarkup(cur){
     const end = circleEdgePoint(B.x, B.y, rB, g.mx, g.my);
     return {g, e:g.edge, start, end, segLen:Math.hypot(end.x-start.x, end.y-start.y)};
   });
-  const hits = ui.managing ? edgeGeoms.map(({e,start,end,segLen,g})=>{
+  // Short text in a box on the curve's midpoint; "📝" when there is only a description.
+  const labels = edgeGeoms.map(({g,e,start,end})=>{
+    const text = e.label || (e.desc ? '📝' : '');
+    if(!text) return null;
+    const cx = 0.25*start.x + 0.5*g.mx + 0.25*end.x, cy = 0.25*start.y + 0.5*g.my + 0.25*end.y;
+    return {cx, cy, w:labelBoxWidth(text), h:16, edgeId:e.id, text};
+  }).filter(Boolean);
+  resolveLabelOverlaps(labels, 6);
+  const labelSvg = labels.map(l=>`<rect x="${l.cx-l.w/2}" y="${l.cy-l.h/2}" width="${l.w}" height="${l.h}" rx="4" fill="var(--bg)" stroke="var(--border)"></rect>
+    <text x="${l.cx}" y="${l.cy+3.5}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${escapeHtml(l.text)}</text>`).join('');
+  const labelHits = labels.map(l=>`<rect x="${l.cx-l.w/2}" y="${l.cy-l.h/2}" width="${l.w}" height="${l.h}" fill="transparent" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${l.edgeId}')"></rect>`).join('');
+  const hits = edgeGeoms.map(({e,start,end,segLen,g})=>{
     if(segLen<12){
       const midx=(start.x+end.x)/2, midy=(start.y+end.y)/2;
       return `<circle cx="${midx}" cy="${midy}" r="10" fill="transparent" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></circle>`;
     }
     return `<path d="M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}" fill="none" stroke="transparent" stroke-width="16" style="cursor:pointer;" onclick="event.stopPropagation(); startEditMapEdge('${e.id}')"></path>`;
-  }).join('') : '';
+  }).join('') + labelHits;
   const lines = edgeGeoms.map(({g,e,start,end,segLen})=>{
     const dashed = e.type==='secret' ? 'stroke-dasharray="5,5"' : '';
     if(segLen<12){
@@ -426,7 +437,7 @@ function mapEdgesMarkup(cur){
     }
     const marker = e.oneway ? 'marker-end="url(#map-arrow)"' : '';
     return `<path d="M ${start.x} ${start.y} Q ${g.mx} ${g.my} ${end.x} ${end.y}" fill="none" stroke="var(--gold-dim)" stroke-width="2" ${dashed} ${marker}></path>`;
-  }).join('');
+  }).join('') + labelSvg;
   return {lines, hits};
 }
 // Which tile/mark definitions the map needs; `key` changes only when that set
@@ -617,8 +628,9 @@ function renderMapTab(){
         const other = cur.nodes.find(x=>x.id===otherId);
         const dirLabel = e.oneway ? (e.from===n.id ? '→' : '←') : '↔';
         const typeLabel = e.type==='secret' ? '🔒 ' : '';
+        const note = e.label ? ` — ${escapeHtml(e.label)}` : (e.desc ? ' — 📝' : '');
         return `<div class="row between" style="gap:8px;">
-          <span style="font-size:13px;">${typeLabel}${dirLabel} ${escapeHtml(other?(other.num+' · '+other.name):'?')}</span>
+          <span style="font-size:13px;cursor:pointer;flex:1;" onclick="startEditMapEdge('${e.id}')">${typeLabel}${dirLabel} ${escapeHtml(other?(other.num+' · '+other.name):'?')}<span class="small-muted">${note}</span></span>
           <button class="icon-btn" onclick="deleteMapEdge('${e.id}')">🗑</button>
         </div>`;
       }).join('');
@@ -723,6 +735,8 @@ function renderMapEdgeModal(){
       <button style="${d.type==='open'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapEdgeDraftType('open')">Offen</button>
       <button style="${d.type==='secret'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapEdgeDraftType('secret')">Geheim</button>
     </div>
+    <input type="text" maxlength="40" value="${escapeHtml(d.label||'')}" oninput="ui.mapEdgeDraft.label=this.value;" placeholder="Kurztext auf der Karte (z. B. Pit Trap, Treppe ↓)">
+    <textarea rows="4" placeholder="Beschreibung: Länge, Fallen, Details…" oninput="ui.mapEdgeDraft.desc=this.value;">${escapeHtml(d.desc||'')}</textarea>
     <button class="row between" style="border-radius:10px;padding:10px 12px;background:${d.oneway?'var(--panel-raised)':'transparent'};border:1px solid ${d.oneway?'var(--gold)':'var(--border)'};color:var(--text);" onclick="toggleMapEdgeDraftOneway()">
       <span>Einbahn (nur ${escapeHtml(fromNode?fromNode.name:'?')} → ${escapeHtml(toNode?toNode.name:'?')})</span>${d.oneway?'<span style="color:var(--gold);">✓</span>':''}
     </button>

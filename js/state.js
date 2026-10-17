@@ -111,6 +111,7 @@ function ensureCampaign(data){
       id: e.id||uid(), from:e.from, to:e.to,
       type: e.type==='secret' ? 'secret' : 'open',
       oneway: !!e.oneway,
+      label: e.label||'', desc: e.desc||'',
     })),
     turns: m.turns || null,   // turn tracker, normalised in turns.js
   }));
