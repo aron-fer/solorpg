@@ -114,6 +114,7 @@ function ensureCampaign(data){
       label: e.label||'', desc: e.desc||'',
     })),
     turns: m.turns || null,   // turn tracker, normalised in turns.js
+    tablePicks: normMapTablePicks(m.tablePicks),   // tables shown on this map, see map.js
   }));
   // Square-grid rooms used to snap to line crossings; they now sit in cell
   // centres. Move old crossing-snapped rooms half a cell, once per map.
@@ -204,7 +205,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   characterViewMode:'full',
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null,
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
@@ -246,11 +247,12 @@ function updateCurrentCharacter(updater){
   if(!cur) return;
   updateActive(camp => ({...camp, characters: camp.characters.map(c => c.id===cur.id ? updater(c) : c)}));
 }
-function pushLog(text, ctx){
+function pushLog(text, ctx, quiet){
   ctx = ctx || 'oracle';
   const field = ctx==='battle' ? 'battleLog' : 'log';
   updateActive(camp => ({...camp, [field]: [{id:uid(), time:timeNow(), text}, ...camp[field]].slice(0,200)}));
   saveState();
+  if(quiet) return;   // rolled elsewhere (map table bar): don't jump to the top
   setTimeout(()=>{
     window.scrollTo({top:0, behavior:'smooth'});
     const box = document.getElementById('results-log-scroll-'+ctx);

@@ -536,6 +536,109 @@ function mountMapSvg(){
   // Re-appending an already placed svg would detach it (→ full restyle).
   if(svg.parentNode!==wrap) wrap.replaceChildren(svg);
 }
+// ---- Tables on a map ----
+// Each map can show a set of tables (whole groups, single tables, combos) as
+// buttons under the map; the last rolls stay visible there.
+function normMapTablePicks(p){
+  p = p || {};
+  const arr = x => Array.isArray(x) ? x.filter(v=>typeof v==='string') : [];
+  return {groups: arr(p.groups), tables: arr(p.tables), combos: arr(p.combos)};
+}
+function mapPicks(cur){ return normMapTablePicks(cur && cur.tablePicks); }
+function toggleMapTablePick(kind, key){
+  updateCurrentMap(m=>{
+    const p = normMapTablePicks(m.tablePicks);
+    p[kind] = p[kind].includes(key) ? p[kind].filter(x=>x!==key) : [...p[kind], key];
+    return {...m, tablePicks:p};
+  });
+  saveState(); render();
+}
+// Buttons for the current map: picked groups (in table order), then single tables, then combos.
+function mapTableButtons(cur){
+  const active = getActive(), p = mapPicks(cur);
+  const out = [], seen = new Set();
+  p.groups.forEach(g=>{
+    const members = active.tables.filter(t=>(t.group||'')===g);
+    if(!members.length) return;
+    out.push({head:g || 'Ohne Gruppe'});
+    members.forEach(t=>{ seen.add(t.id); out.push({kind:'table', id:t.id, label:shortTableLabel(t.name, g)}); });
+  });
+  const singles = p.tables.map(id=>active.tables.find(t=>t.id===id)).filter(t=>t && !seen.has(t.id));
+  if(singles.length){ if(out.length) out.push({head:'Tabellen'}); singles.forEach(t=>out.push({kind:'table', id:t.id, label:t.name})); }
+  const combos = p.combos.map(id=>active.combos.find(c=>c.id===id)).filter(Boolean);
+  if(combos.length){ out.push({head:'Kombinationen'}); combos.forEach(c=>out.push({kind:'combo', id:c.id, label:'🧩 '+c.name})); }
+  return out;
+}
+// "Dungeon: Room Contents" in group "Dungeon" → "Room Contents".
+function shortTableLabel(name, group){
+  return group && name.toLowerCase().startsWith(group.toLowerCase()+': ') ? name.slice(group.length+2) : name;
+}
+function mapRoll(kind, id){
+  const active = getActive();
+  let text = null;
+  if(kind==='table'){
+    const t = active.tables.find(x=>x.id===id);
+    if(t) text = rollOneEntry(t);
+  } else {
+    const c = active.combos.find(x=>x.id===id);
+    if(c){
+      const included = c.tableIds.map(tid=>active.tables.find(t=>t.id===tid)).filter(Boolean);
+      text = included.length ? `${c.name}:\n${included.map(rollOneEntry).join('\n')}` : `${c.name}: (keine Tabellen in der Kombi)`;
+    }
+  }
+  if(text==null) return;
+  pushLog(text, 'oracle', true);
+  ui.mapRolls = [{id:uid(), text}, ...(ui.mapRolls||[])].slice(0,3);
+  render();
+}
+function renderMapTableBar(cur){
+  const btns = mapTableButtons(cur);
+  if(!btns.length) return '';
+  const body = btns.map(b=>b.head
+    ? `<span class="small-muted" style="width:100%;margin-top:2px;">${escapeHtml(b.head)}</span>`
+    : `<button class="btn btn-raised" style="padding:5px 9px;font-size:12px;" onclick="mapRoll('${b.kind}','${b.id}')">${escapeHtml(b.label)}</button>`).join('');
+  const rolls = (ui.mapRolls||[]).map((r,i)=>`<div class="log-entry ${i===0?'latest':''}" style="align-items:flex-start;">
+      <span class="log-text" style="flex:1;">${escapeHtml(r.text)}${bestiaryButtonsFor(r.text)}</span>
+    </div>`).join('');
+  return `<div class="panel" style="gap:6px;padding:8px 10px;">
+    <details ${ui.mapTablesOpen?'open':''} ontoggle="ui.mapTablesOpen=this.open">
+      <summary class="label" style="cursor:pointer;">🎲 Tabellen</summary>
+      <div class="row wrap" style="gap:6px;margin-top:6px;">${body}</div>
+    </details>
+    ${rolls ? `<div style="display:flex;flex-direction:column;gap:2px;">${rolls}</div>
+      <div class="row" style="justify-content:flex-end;"><button class="link-chip" onclick="ui.mapRolls=[]; render();">Ergebnisse ausblenden</button></div>` : ''}
+  </div>`;
+}
+// Open/closed state of the picker survives re-renders (each tick re-renders).
+function toggleMapPickerGroupOpen(g, open){
+  const cur = ui.mapPickerGroups || [];
+  ui.mapPickerGroups = open ? (cur.includes(g) ? cur : [...cur, g]) : cur.filter(x=>x!==g);
+}
+function renderMapTablePicker(cur){
+  const active = getActive(), p = mapPicks(cur);
+  if(!active.tables.length) return '';
+  const groups = [...new Set(active.tables.map(t=>t.group||''))].sort((a,b)=>a.localeCompare(b));
+  const check = (on) => on ? '☑' : '☐';
+  const rowStyle = 'display:block;text-align:left;margin:2px 0;font-size:13px;text-decoration:none;color:var(--text);';
+  const n = p.groups.length + p.tables.length + p.combos.length;
+  const groupRows = groups.map(g=>{
+    const members = active.tables.filter(t=>(t.group||'')===g);
+    const gOn = p.groups.includes(g);
+    const singles = gOn ? '' : `<details style="margin-left:22px;" ${(ui.mapPickerGroups||[]).includes(g)?'open':''} ontoggle="toggleMapPickerGroupOpen(${jsStr(g)}, this.open)"><summary class="small-muted" style="cursor:pointer;">einzelne Tabellen</summary>
+      ${members.map(t=>`<button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('tables','${t.id}')">${check(p.tables.includes(t.id))} ${escapeHtml(t.name)}</button>`).join('')}
+    </details>`;
+    const picked = gOn ? 0 : members.filter(t=>p.tables.includes(t.id)).length;
+    return `<div><button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('groups',${jsStr(g)})">${check(gOn)} <b style="color:var(--gold);">${escapeHtml(g||'Ohne Gruppe')}</b> <span class="small-muted">(${members.length}${picked ? `, ${picked} einzeln gewählt` : ''})</span></button>${singles}</div>`;
+  }).join('');
+  const comboRows = active.combos.length ? `<span class="small-muted" style="margin-top:6px;">Kombinationen</span>`
+    + active.combos.map(c=>`<button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('combos','${c.id}')">${check(p.combos.includes(c.id))} 🧩 ${escapeHtml(c.name)}</button>`).join('') : '';
+  return `<details class="panel" style="gap:4px;padding:8px 10px;" ${ui.mapPickerOpen?'open':''} ontoggle="ui.mapPickerOpen=this.open">
+    <summary class="label" style="cursor:pointer;">🎲 Tabellen auf dieser Karte${n ? ` (${n})` : ''}</summary>
+    <span class="small-muted">Angehakte Gruppen, Tabellen und Kombinationen erscheinen beim Spielen als Knöpfe unter der Karte.</span>
+    <div style="display:flex;flex-direction:column;gap:2px;margin-top:4px;">${groupRows}${comboRows}</div>
+  </details>`;
+}
+
 function renderMapTab(){
   const active = getActive();
   const cur = getCurrentMap();
@@ -592,6 +695,7 @@ function renderMapTab(){
       ${areaDatalistHtml()}
     </div>` : ''}
     <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.</p>`;
+    html += renderMapTablePicker(cur);
     if(ui.mapMoveArmedId){
       html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um den Raum dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
     }
@@ -608,6 +712,7 @@ function renderMapTab(){
     <div class="row" style="gap:4px;justify-content:flex-end;">${zoomControlsHtml('map','Ganze Karte zeigen')}</div>
   </div>`;
 
+  if(!ui.managing) html += renderMapTableBar(cur);
   if(ui.mapEncounterResult){
     html += `<div class="panel" style="border-color:var(--gold-dim);">
       <div class="row between" style="gap:8px;align-items:flex-start;">
