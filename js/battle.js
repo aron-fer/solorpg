@@ -258,6 +258,22 @@ function renderSpecials(text){
   // "Climb: 11-in-12 … Shamanism: …" → ability names in bold.
   return escapeHtml(text).replace(/(^|[.)]\s+|•\s*)([A-Z][A-Za-z'’ -]{1,30}?):/gm, '$1<b>$2:</b>');
 }
+// Specials start folded: the ability names stay visible as a reminder.
+function renderBattleSpecials(sb){
+  const text = sb.specials || '';
+  if(!text.trim()) return '';
+  const bullets = [...text.matchAll(/^•\s*([^:\n]{1,40}):/gm)].map(m=>m[1]);
+  const names = bullets.length ? bullets : [...text.matchAll(/(?:^|[.)]\s+)([A-Z][A-Za-z'’ -]{1,30}?):/gm)].map(m=>m[1]);
+  if(!names.length) return `<div class="small-muted battle-specials">${renderSpecials(text)}</div>`;
+  const open = (ui.battleSpecialsOpen||[]).includes(sb.id);
+  return `<details class="battle-specials-fold" ${open?'open':''} ontoggle="onBattleSpecialsToggle('${sb.id}',this.open)">
+    <summary class="small-muted">Specials: <b>${names.map(escapeHtml).join(' · ')}</b></summary>
+    <div class="small-muted battle-specials">${renderSpecials(text)}</div></details>`;
+}
+function onBattleSpecialsToggle(id, open){
+  const cur = (ui.battleSpecialsOpen||[]).filter(x=>x!==id);
+  ui.battleSpecialsOpen = open ? [...cur, id] : cur;
+}
 function renderEnemyBlock(sb){
   const editing = ui.battleEditId===sb.id;
   const alive = sb.members.filter(m=>mCur(m)>0).length;
@@ -269,45 +285,56 @@ function renderEnemyBlock(sb){
     const ia = SB_SHOW_ORDER.indexOf(a.k), ib = SB_SHOW_ORDER.indexOf(b.k);
     return (ia<0?99:ia)-(ib<0?99:ib);
   });
-  const statLine = stats.filter(s=>s.v && !SB_BATTLE_HIDE.includes(s.k)).map(s=>`<span class="sb-item${s.v.length>14?' sb-wrap':''}"><span class="sb-lbl">${escapeHtml(s.k)}</span> ${escapeHtml(s.v)}</span>`).join('<span class="sb-sep"> · </span>');
   const chips = sb.members.map((m,i)=>{
     const cur = mCur(m), max = mMax(m);
     const dead = cur<=0, low = !dead && max && cur<=max/3, sel = target && m.id===target.id;
     return `<button class="hp-chip${dead?' dead':''}${low?' low':''}${sel?' sel':''}" onclick="selectBattleTarget('${sb.id}','${m.id}')">${i+1} · ${hdMode?'HD ':''}<b>${cur}</b>/${max}</button>`;
   }).join('');
-  return `<div class="panel battle-enemy">
-    <div class="row" style="gap:8px;align-items:baseline;">
-      ${editing ? `<input type="text" value="${escapeHtml(sb.name)}" placeholder="Name" oninput="onStatblockName('${sb.id}',this)" style="flex:1;font-weight:600;">`
-        : `<span class="sb-name" style="font-size:17px;">${escapeHtml(sb.name||'Gegner')}</span><span class="small-muted">${sb.members.length>1 ? `${alive}/${sb.members.length}` : (alive ? '' : 'besiegt')}</span><span style="flex:1;"></span>`}
-      <button class="icon-btn" onclick="toggleBattleEdit('${sb.id}')" title="Bearbeiten">${editing?'✓':'⋯'}</button>
-    </div>
-    ${editing
-      ? `<span class="small-muted">Statzeile (wie im Buch, mit | oder Komma getrennt):</span>
-         <textarea rows="2" oninput="onStatblockStatline('${sb.id}',this)">${escapeHtml(sb.stats.map(s=>`${s.k} ${s.v}`).join(' | '))}</textarea>
-         <span class="small-muted">Specials:</span>
-         <textarea rows="3" oninput="onStatblockSpecials('${sb.id}',this)">${escapeHtml(sb.specials)}</textarea>`
-      : (statLine ? `<div class="sb-line battle-stats" style="border-top:none;">${statLine}</div>` : '')}
-    <div class="row wrap" style="gap:6px;">
-      ${editing
-        ? sb.members.map((m,i)=>`<span class="hp-chip" style="display:inline-flex;gap:4px;align-items:center;">${i+1}
-${hdMode?' HD':''}
-            <input type="number" value="${m[curKey]}" onchange="onMemberHp('${sb.id}','${m.id}','${curKey}',this)" style="width:52px;padding:2px 4px;">/
-            <input type="number" value="${m[maxKey]}" onchange="onMemberHp('${sb.id}','${m.id}','${maxKey}',this)" style="width:52px;padding:2px 4px;">
-            <button class="x-btn" onclick="removeEnemyMember('${sb.id}','${m.id}')">✕</button></span>`).join('')
-          + `<button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="addEnemyMember('${sb.id}')">+ 1 (HD würfeln)</button>`
-        : chips + (sb.members.length ? `<span class="row" style="gap:4px;margin-left:auto;">
-            <button class="sb-step" onclick="stepBattleDmg('${sb.id}',-1)" aria-label="−1">−</button>
+  const ctrls = sb.members.length ? `<button class="sb-step" onclick="stepBattleDmg('${sb.id}',-1)" aria-label="−1">−</button>
             <input type="number" min="1" id="dmg-${sb.id}" placeholder="${target?`#${sb.members.indexOf(target)+1}`:''}" style="width:58px;padding:4px 6px;" onkeydown="if(event.key==='Enter'){applyBattleHp('${sb.id}',-1);}">
             <button class="sb-step" onclick="stepBattleDmg('${sb.id}',1)" aria-label="+1">+</button>
             <button class="btn btn-outline-wax" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',-1)">Schaden</button>
-            <button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',1)">Heilen</button>
-          </span>` : '')}
+            <button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',1)">Heilen</button>` : '';
+  if(!editing){
+    // One row like the party: name, stats, HP chips, damage controls.
+    const head = stats.filter(s=>s.v && !SB_BATTLE_HIDE.includes(s.k)).map(s=>`<span class="sb-head-item"><span class="sb-lbl">${escapeHtml(s.k)}</span> <b>${escapeHtml(s.v)}</b></span>`).join('');
+    return `<div class="panel battle-row battle-enemy">
+    <div class="sb-head" style="padding:0;">
+      <span class="sb-name" style="font-size:16px;">${escapeHtml(sb.name||'Gegner')} <span class="small-muted">${sb.members.length>1 ? `${alive}/${sb.members.length}` : (alive ? '' : 'besiegt')}</span></span>
+      ${head}
+      ${chips ? `<span class="sb-head-item" style="gap:6px;flex-wrap:wrap;">${chips}</span>` : ''}
+      <span class="row" style="gap:4px;margin-left:auto;">${ctrls}<button class="icon-btn" onclick="toggleBattleEdit('${sb.id}')" title="Bearbeiten">⋯</button></span>
     </div>
-    ${!editing && sb.specials ? `<div class="small-muted battle-specials">${renderSpecials(sb.specials)}</div>` : ''}
-    ${!editing && sb.desc ? `<details><summary class="small-muted" style="cursor:pointer;">Beschreibung</summary><div class="battle-desc">${escapeHtml(sb.desc)}</div></details>` : ''}
-    ${!editing && xpEach && defeated ? `<span class="small-muted">XP: ${defeated} × ${xpEach} = ${defeated*xpEach}</span>` : ''}
-    ${editing || sb.notes ? `<textarea rows="2" placeholder="Notizen" oninput="onStatblockNotes('${sb.id}',this)" ${editing?'':'readonly'}>${escapeHtml(sb.notes)}</textarea>` : ''}
-    ${(sb.statuses||[]).length || editing ? `<div style="display:flex;flex-direction:column;gap:8px;">
+    ${renderBattleSpecials(sb)}
+    ${sb.desc ? `<details><summary class="small-muted" style="cursor:pointer;">Beschreibung</summary><div class="battle-desc">${escapeHtml(sb.desc)}</div></details>` : ''}
+    ${xpEach && defeated ? `<span class="small-muted">XP: ${defeated} × ${xpEach} = ${defeated*xpEach}</span>` : ''}
+    ${sb.notes ? `<textarea rows="2" placeholder="Notizen" readonly>${escapeHtml(sb.notes)}</textarea>` : ''}
+    ${renderEnemyStatuses(sb, false)}
+  </div>`;
+  }
+  return `<div class="panel battle-enemy">
+    <div class="row" style="gap:8px;align-items:baseline;">
+      <input type="text" value="${escapeHtml(sb.name)}" placeholder="Name" oninput="onStatblockName('${sb.id}',this)" style="flex:1;font-weight:600;">
+      <button class="icon-btn" onclick="toggleBattleEdit('${sb.id}')" title="Fertig">✓</button>
+    </div>
+    <span class="small-muted">Statzeile (wie im Buch, mit | oder Komma getrennt):</span>
+    <textarea rows="2" oninput="onStatblockStatline('${sb.id}',this)">${escapeHtml(sb.stats.map(s=>`${s.k} ${s.v}`).join(' | '))}</textarea>
+    <span class="small-muted">Specials:</span>
+    <textarea rows="3" oninput="onStatblockSpecials('${sb.id}',this)">${escapeHtml(sb.specials)}</textarea>
+    <div class="row wrap" style="gap:6px;">
+      ${sb.members.map((m,i)=>`<span class="hp-chip" style="display:inline-flex;gap:4px;align-items:center;">${i+1}
+${hdMode?' HD':''}
+            <input type="number" value="${m[curKey]}" onchange="onMemberHp('${sb.id}','${m.id}','${curKey}',this)" style="width:52px;padding:2px 4px;">/
+            <input type="number" value="${m[maxKey]}" onchange="onMemberHp('${sb.id}','${m.id}','${maxKey}',this)" style="width:52px;padding:2px 4px;">
+            <button class="x-btn" onclick="removeEnemyMember('${sb.id}','${m.id}')">✕</button></span>`).join('')}
+      <button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="addEnemyMember('${sb.id}')">+ 1 (HD würfeln)</button>
+    </div>
+    <textarea rows="2" placeholder="Notizen" oninput="onStatblockNotes('${sb.id}',this)">${escapeHtml(sb.notes)}</textarea>
+    ${renderEnemyStatuses(sb, true)}
+  </div>`;
+}
+function renderEnemyStatuses(sb, editing){
+  return `${(sb.statuses||[]).length || editing ? `<div style="display:flex;flex-direction:column;gap:8px;">
       ${(sb.statuses||[]).map(st=>{
         const inputId = `sbstatusreduce-${st.id}`;
         return `<div style="display:flex;flex-direction:column;gap:6px;background:var(--panel-raised);border-radius:10px;padding:8px;">
@@ -326,8 +353,7 @@ ${hdMode?' HD':''}
         <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="duplicateStatblock('${sb.id}')">⧉ Neue Gruppe davon</button>
         <button class="btn btn-outline-wax" style="padding:4px 8px;font-size:12px;margin-left:auto;" onclick="deleteStatblock('${sb.id}')">🗑 Entfernen</button>
       </div>` : ''}
-    </div>` : ''}
-  </div>`;
+    </div>` : ''}`;
 }
 
 function renderBattleTab(){
@@ -374,7 +400,7 @@ function renderBattleTab(){
       </div>
     </div>`;
   }
-  html += enemies.length ? `<div class="masonry-cards">${enemies.map(renderEnemyBlock).join('')}</div>`
+  html += enemies.length ? `<div class="battle-enemies">${enemies.map(renderEnemyBlock).join('')}</div>`
     : `<p class="small-muted" style="margin:0;">Noch keine Gegner. „Statblock einfügen" liest Statblocks im Hyperborea-Format; die HP werden nach HD ausgewürfelt.</p>`;
   return html;
 }

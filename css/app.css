@@ -140,6 +140,11 @@ textarea { resize:none; font-family: Georgia, serif; }
 /* Kampf tab */
 .battle-row { padding:10px 12px; }
 .battle-enemy { gap:8px; }
+.battle-enemies { display:flex; flex-direction:column; gap:10px; }
+.battle-enemy .sb-head { gap:6px 12px; }
+.battle-specials-fold summary { cursor:pointer; }
+.battle-specials-fold summary b { color:var(--text); font-weight:600; }
+.battle-specials-fold .battle-specials { margin-top:6px; }
 .battle-specials { white-space:pre-line; font-size:13px; line-height:1.45; border-top:1px solid var(--border); padding-top:6px; }
 .battle-specials b { color:var(--text); font-weight:600; }
 .hp-chip { border:1px solid var(--border); border-radius:8px; padding:2px 8px; font-size:13px; color:var(--text); background:var(--panel-raised); }
