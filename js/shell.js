@@ -155,11 +155,17 @@ function render(){
   const body = (active.splitView && window.innerWidth>=900) ? renderSplitView() : renderActiveTab();
   const main = document.getElementById('main');
   const html = renderHeader() + body + renderModals();
+  // Replacing the HTML resets scroll positions: keep the page's and those of
+  // open sheets (e.g. Optionen), so toggling something doesn't jump to the top.
+  const pageY = window.scrollY;
+  const sheetY = [...main.querySelectorAll('.modal-sheet, .modal-scroll')].map(el=>el.scrollTop);
   if(!patchAroundMapPanel(main, html)){
     main.innerHTML = html;
     mountMapSvg(); // keeps the (possibly huge) map SVG between renders
     restoreZoomViews();
   }
+  main.querySelectorAll('.modal-sheet, .modal-scroll').forEach((el,i)=>{ if(sheetY[i]) el.scrollTop = sheetY[i]; });
+  if(window.scrollY!==pageY) window.scrollTo(0, pageY);
 }
 // If the map panel is on screen and stays there, replace only the page parts
 // around it. Taking a map with thousands of hexes out of the page and back
@@ -346,7 +352,7 @@ function renderOptionsModal(){
   return `<div class="modal-overlay"><div class="modal-sheet">
     <div class="row between"><span class="label" style="color:var(--gold);">Optionen — ${escapeHtml(camp?camp.name:'')}</span>
       <button class="icon-btn" onclick="closeOptions()">✕</button></div>
-    <div style="display:flex;flex-direction:column;gap:20px;max-height:70vh;overflow-y:auto;padding-right:2px;">
+    <div class="modal-scroll" style="display:flex;flex-direction:column;gap:20px;max-height:70vh;overflow-y:auto;padding-right:2px;">
       <div style="display:flex;flex-direction:column;gap:8px;">
         <span class="label">📑 Tabs</span>
         <p class="small-muted">Name, Icon (ein Emoji) und Reihenfolge aller Tabs — auch der festen wie Kampf, Orakel, Charakter, Text.</p>
