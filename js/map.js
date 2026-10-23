@@ -208,6 +208,7 @@ function travelAndEncounter(id){
 }
 function brushLabel(brush){
   if(brush==='__clear') return 'Gelände & Siedlung entfernen';
+  if(brush==='__delete') return 'Löschen';
   if(brush.startsWith('set:')) return SETTLEMENT_BY_ID[brush.slice(4)].label;
   return TERRAIN_BY_ID[brush].label;
 }
@@ -221,6 +222,7 @@ function selectMapNode(id){
       ui.mapConnectFrom=null; render(); return;
     }
     if(ui.mapMoveArmedId) return;
+    if(ui.mapBrush==='__delete'){ deleteMapNode(id); return; }
     if(ui.mapBrush || (areasOn() && (ui.mapAreaBrush||'').trim())){ applyBrushesToNode(id); return; }
     startEditMapNode(id);
     return;
@@ -263,6 +265,7 @@ function onMapCanvasClick(evt){
     ui.mapConnectFrom=null; render();
     return;
   }
+  if(ui.mapBrush==='__delete') return; // delete brush: empty space does nothing
   addMapNodeAt(x, y, ui.mapBrush && ui.mapBrush!=='__clear' ? ui.mapBrush : null);
 }
 function setMarkerHere(nodeId){
@@ -694,7 +697,7 @@ function renderMapTab(){
       ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" onchange="onMapGridSizeInput(this,true)" style="width:100px;">` : ''}
     </div>
     ${cur.grid==='hex' ? `<div style="display:flex;flex-direction:column;gap:4px;">
-      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '') : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
+      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — '+(ui.mapBrush==='__delete' ? 'Feld tippen = Feld löschen' : 'leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '')) : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
       ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
     </div>` : ''}
     ${areasOn() ? `<div style="display:flex;flex-direction:column;gap:4px;">
@@ -790,7 +793,10 @@ function renderTerrainPalette(current, handler, withSettlements){
   let html = items.map(t=>swatch(t.id, t.label, t.id==='__clear' ? null : t.id, (current||'__clear')===t.id)).join('');
   if(withSettlements){
     html += `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
-      + SETTLEMENTS.map(s=>swatch('set:'+s.id, s.label+' (auf Gelände setzen)', s.id, current==='set:'+s.id)).join('');
+      + SETTLEMENTS.map(s=>swatch('set:'+s.id, s.label+' (auf Gelände setzen)', s.id, current==='set:'+s.id)).join('')
+      + `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
+      + `<button title="Löschen (Feld antippen = Feld löschen)" onclick="${handler}('__delete')"
+          style="border-radius:8px;width:38px;height:38px;font-size:18px;border:2px solid ${current==='__delete'?'var(--wax)':'transparent'};background:${current==='__delete'?'var(--panel-raised)':'transparent'};">🗑</button>`;
   }
   return `<div class="row wrap" style="gap:4px;">${html}</div>`;
 }
