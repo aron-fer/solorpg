@@ -369,6 +369,7 @@ function mapNodeMarkup(cur, n){
     : `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)" style="pointer-events:none;">${escapeHtml(n.num)}</text>`;
   return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">${shape}${numText}</g>`;
 }
+const MAP_MARKER_RED = '#d8322a';
 // Selection / move target outlines and the 📍 party marker.
 function mapOverlayMarkup(cur){
   const hexMode = cur.grid==='hex';
@@ -384,14 +385,17 @@ function mapOverlayMarkup(cur){
   if(sel) out += outline(sel, 'var(--gold)');
   if(armed) out += outline(armed, 'var(--wax)');
   if(marker){
-    // A small pin above the room, so it doesn't compete with the selection outline.
+    // Red pin above the room plus a red ring around it, so the party stands out
+    // even on a busy map. Scales with the hex size.
     const n = marker, r = mapNodeRadius(cur, n);
     const topR = hexMode ? hexApothem(cur.gridSize) : r;
-    const bulbR = 6.5, tailLen = 9, gap = 3;
-    const tipY = n.y - topR - gap, bulbCy = tipY - tailLen;
-    out += `<polygon points="${n.x-3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x+3.2},${(bulbCy+bulbR-1).toFixed(1)} ${n.x},${tipY}" fill="var(--gold)"></polygon>
-      <circle cx="${n.x}" cy="${bulbCy}" r="${bulbR}" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.4"></circle>
-      <circle cx="${n.x}" cy="${bulbCy}" r="2.6" fill="var(--bg)"></circle>`;
+    const k = hexMode ? cur.gridSize/24 : 1.2;
+    const bulbR = 6.5*k, tailLen = 9*k, gap = 2*k;
+    const tipY = n.y - topR*0.12 - gap, bulbCy = tipY - tailLen;
+    out += outline(n, MAP_MARKER_RED);
+    out += `<polygon points="${(n.x-3.4*k).toFixed(1)},${(bulbCy+bulbR*0.75).toFixed(1)} ${(n.x+3.4*k).toFixed(1)},${(bulbCy+bulbR*0.75).toFixed(1)} ${n.x},${tipY.toFixed(1)}" fill="${MAP_MARKER_RED}" stroke="#fff" stroke-width="${(1.2*k).toFixed(1)}" stroke-linejoin="round"></polygon>
+      <circle cx="${n.x}" cy="${bulbCy.toFixed(1)}" r="${bulbR.toFixed(1)}" fill="${MAP_MARKER_RED}" stroke="#fff" stroke-width="${(1.4*k).toFixed(1)}"></circle>
+      <circle cx="${n.x}" cy="${bulbCy.toFixed(1)}" r="${(2.6*k).toFixed(1)}" fill="#fff"></circle>`;
   }
   return out;
 }
