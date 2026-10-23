@@ -94,15 +94,16 @@ function renderKarteiEntryCard(kartei, e){
     </div>
     ${e.notes ? `<div style="font-size:12px;color:var(--text-muted);white-space:pre-line;">${renderLinkedText(e.notes.length>80?e.notes.slice(0,80)+'…':e.notes)}</div>` : ''}`;
 }
-function renderKarteiTopLevelCard(kartei, e, children){
+function renderKarteiTopLevelCard(kartei, e, children, forceOpen){
   const resolvedStyle = kartei.hasCheckbox && e.resolved;
   const checkbox = kartei.hasCheckbox ? `<button class="thread-check ${e.resolved?'done':''}" onclick="toggleKarteiEntryResolved('${kartei.id}','${e.id}')">${e.resolved?'✓':''}</button>` : '';
   const hasExtra = !!e.notes || children.length>0;
+  const collapsed = e.collapsed && !forceOpen;
   const chevron = hasExtra
-    ? `<button onclick="toggleKarteiEntryCollapse('${kartei.id}','${e.id}')" style="color:var(--text-faint);padding:0 2px;flex-shrink:0;">${e.collapsed?'▶':'▼'}</button>`
+    ? `<button onclick="toggleKarteiEntryCollapse('${kartei.id}','${e.id}')" style="color:var(--text-faint);padding:0 2px;flex-shrink:0;">${collapsed?'▶':'▼'}</button>`
     : `<span style="width:16px;flex-shrink:0;"></span>`;
   let body = '';
-  if(!e.collapsed){
+  if(!collapsed){
     if(e.notes) body += `<div style="font-size:12px;color:var(--text-muted);white-space:pre-line;">${renderLinkedText(e.notes.length>80?e.notes.slice(0,80)+'…':e.notes)}</div>`;
     if(children.length){
       body += `<div style="display:flex;flex-direction:column;gap:8px;padding-left:12px;border-left:2px solid var(--border);margin-top:4px;">` +
@@ -119,6 +120,56 @@ function renderKarteiTopLevelCard(kartei, e, children){
     </div>
     ${body}`;
 }
+// ---- Search and collapse-all ----
+// The search text lives in ui only (per Kartei, not saved). Typing redraws just
+// the list so the input keeps its focus.
+function karteiQuery(karteiId){ return ((ui.karteiSearch||{})[karteiId]||'').trim().toLowerCase(); }
+function onKarteiSearch(karteiId, el){
+  ui.karteiSearch = {...(ui.karteiSearch||{}), [karteiId]: el.value};
+  const kartei = getActive().karteien.find(k=>k.id===karteiId);
+  const box = document.getElementById('kartei-list-'+karteiId);
+  if(kartei && box) box.innerHTML = renderKarteiList(kartei);
+}
+function clearKarteiSearch(karteiId){ ui.karteiSearch = {...(ui.karteiSearch||{}), [karteiId]: ''}; render(); }
+function setAllKarteiCollapsed(karteiId, collapsed){
+  updateActive(camp=>({...camp, karteien: camp.karteien.map(k=>{
+    if(k.id!==karteiId) return k;
+    const ids = new Set(k.entries.map(e=>e.id));
+    const hasKids = new Set(k.entries.filter(e=>e.parentId && ids.has(e.parentId)).map(e=>e.parentId));
+    return {...k, entries: k.entries.map(e=>(!e.parentId || !ids.has(e.parentId)) && (e.notes || hasKids.has(e.id)) ? {...e, collapsed} : e)};
+  })}));
+  saveState(); render();
+}
+function renderKarteiList(kartei){
+  const entryIds = new Set(kartei.entries.map(e=>e.id));
+  const childrenOf = new Map();
+  kartei.entries.forEach(e=>{
+    if(e.parentId && entryIds.has(e.parentId)){
+      if(!childrenOf.has(e.parentId)) childrenOf.set(e.parentId, []);
+      childrenOf.get(e.parentId).push(e);
+    }
+  });
+  const topLevel = kartei.entries.filter(e=>!e.parentId || !entryIds.has(e.parentId));
+  if(topLevel.length===0){
+    return `<div class="empty"><span>Noch keine Einträge.</span>
+      <button class="btn btn-raised" onclick="startNewKarteiEntry('${kartei.id}')">+ Ersten Eintrag anlegen</button></div>`;
+  }
+  const q = karteiQuery(kartei.id);
+  const hit = e => (e.title||'').toLowerCase().includes(q) || (e.notes||'').toLowerCase().includes(q);
+  let shown = topLevel.map(e=>({e, children: childrenOf.get(e.id) || []}));
+  let count = 0;
+  if(q){
+    shown = shown.map(({e, children})=>{
+      const self = hit(e), kids = children.filter(hit);
+      count += (self?1:0) + kids.length;
+      return (self || kids.length) ? {e, children: self && !kids.length ? children : kids} : null;
+    }).filter(Boolean);
+    if(!shown.length) return `<p class="small-muted" style="text-align:center;">Keine Einträge zu „${escapeHtml(q)}“.</p>`;
+  }
+  return (q ? `<p class="small-muted" style="margin:0 0 6px;">${count} Treffer</p>` : '')
+    + `<div class="grid-cards">` + shown.map(({e, children})=>
+      `<div class="npc-card" id="kartei-entry-${e.id}" style="display:flex;flex-direction:column;gap:6px;">${renderKarteiTopLevelCard(kartei,e,children,!!q)}</div>`).join('') + `</div>`;
+}
 function renderKarteiTab(karteiId){
   const active = getActive();
   const kartei = active.karteien.find(k=>k.id===karteiId);
@@ -133,24 +184,16 @@ function renderKarteiTab(karteiId){
   }
   html += `<div class="panel"><div class="row between"><span class="label">📇 ${escapeHtml(kartei.name)}</span>
     <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="startNewKarteiEntry('${kartei.id}')">+ Neu</button></div>`;
-  const entryIds = new Set(kartei.entries.map(e=>e.id));
-  const childrenOf = new Map();
-  kartei.entries.forEach(e=>{
-    if(e.parentId && entryIds.has(e.parentId)){
-      if(!childrenOf.has(e.parentId)) childrenOf.set(e.parentId, []);
-      childrenOf.get(e.parentId).push(e);
-    }
-  });
-  const topLevel = kartei.entries.filter(e=>!e.parentId || !entryIds.has(e.parentId));
-  if(topLevel.length===0){
-    html += `<div class="empty"><span>Noch keine Einträge.</span>
-      <button class="btn btn-raised" onclick="startNewKarteiEntry('${kartei.id}')">+ Ersten Eintrag anlegen</button></div>`;
-  } else {
-    html += `<div class="grid-cards">` + topLevel.map(e=>{
-      const children = childrenOf.get(e.id) || [];
-      return `<div class="npc-card" id="kartei-entry-${e.id}" style="display:flex;flex-direction:column;gap:6px;">${renderKarteiTopLevelCard(kartei,e,children)}</div>`;
-    }).join('') + `</div>`;
+  if(kartei.entries.length){
+    const qRaw = (ui.karteiSearch||{})[kartei.id] || '';
+    html += `<div class="row" style="gap:6px;">
+      <input type="search" id="kartei-search-${kartei.id}" value="${escapeHtml(qRaw)}" placeholder="🔍 Suchen (Titel und Notizen)…" oninput="onKarteiSearch('${kartei.id}',this)" style="flex:1;min-width:0;">
+      ${qRaw ? `<button class="icon-btn raised" title="Suche leeren" onclick="clearKarteiSearch('${kartei.id}')">✕</button>` : ''}
+      <button class="icon-btn raised" title="Alle zuklappen" onclick="setAllKarteiCollapsed('${kartei.id}', true)">⊟</button>
+      <button class="icon-btn raised" title="Alle aufklappen" onclick="setAllKarteiCollapsed('${kartei.id}', false)">⊞</button>
+    </div>`;
   }
+  html += `<div id="kartei-list-${kartei.id}" style="display:flex;flex-direction:column;">${renderKarteiList(kartei)}</div>`;
   html += `</div>`;
   return html;
 }
