@@ -252,6 +252,8 @@ function clearStatblockStatus(sbId, statusId){
 
 // ---- Rendering ----
 const SB_SHOW_ORDER = ['#E','AC','HD','FA','CA','MV','DX','#A','D','SV','ML','AL','SZ','XP','TC'];
+// Not needed during the fight; still kept in the statblock (and shown when editing).
+const SB_BATTLE_HIDE = ['#E','DX','AL','SZ','XP','TC'];
 function renderSpecials(text){
   // "Climb: 11-in-12 … Shamanism: …" → ability names in bold.
   return escapeHtml(text).replace(/(^|[.)]\s+|•\s*)([A-Z][A-Za-z'’ -]{1,30}?):/gm, '$1<b>$2:</b>');
@@ -267,7 +269,7 @@ function renderEnemyBlock(sb){
     const ia = SB_SHOW_ORDER.indexOf(a.k), ib = SB_SHOW_ORDER.indexOf(b.k);
     return (ia<0?99:ia)-(ib<0?99:ib);
   });
-  const statLine = stats.filter(s=>s.v).map(s=>`<span class="sb-item${s.v.length>14?' sb-wrap':''}"><span class="sb-lbl">${escapeHtml(s.k)}</span> ${escapeHtml(s.v)}</span>`).join('<span class="sb-sep"> · </span>');
+  const statLine = stats.filter(s=>s.v && !SB_BATTLE_HIDE.includes(s.k)).map(s=>`<span class="sb-item${s.v.length>14?' sb-wrap':''}"><span class="sb-lbl">${escapeHtml(s.k)}</span> ${escapeHtml(s.v)}</span>`).join('<span class="sb-sep"> · </span>');
   const chips = sb.members.map((m,i)=>{
     const cur = mCur(m), max = mMax(m);
     const dead = cur<=0, low = !dead && max && cur<=max/3, sel = target && m.id===target.id;
