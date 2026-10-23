@@ -141,7 +141,16 @@ function handleImportFile(input){
 // ---- Rendering ----
 function render(){
   document.getElementById('sidebar').innerHTML = renderNav(true);
-  document.getElementById('bottomnav').innerHTML = renderNav(false);
+  const nav = document.getElementById('bottomnav');
+  const navScroll = nav.scrollLeft;
+  nav.innerHTML = renderNav(false);
+  nav.scrollLeft = navScroll;
+  // Keep the active tab visible when the bar scrolls sideways.
+  const act = nav.querySelector('button.active');
+  if(act){
+    if(act.offsetLeft < nav.scrollLeft) nav.scrollLeft = act.offsetLeft;
+    else if(act.offsetLeft + act.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = act.offsetLeft + act.offsetWidth - nav.clientWidth;
+  }
   const active = getActive();
   const body = (active.splitView && window.innerWidth>=900) ? renderSplitView() : renderActiveTab();
   const main = document.getElementById('main');
@@ -179,9 +188,9 @@ function renderNav(isSidebar){
   const tabsHtml = tabs.map(t=>{
     const isPinned = active.splitView && active.pinnedTabs.includes(t.id);
     const isActive = !active.splitView && ui.activeTab===t.id;
-    return `<button class="${isActive?'active':''}" style="${isPinned?'position:relative;':''}" onclick="setActiveTab('${t.id}')"><span class="nav-icon">${t.icon}</span>${t.label}${isPinned?' 📌':''}</button>`;
+    return `<button class="${isActive?'active':''}" style="${isPinned?'position:relative;':''}" onclick="setActiveTab('${t.id}')"><span class="nav-icon">${t.icon}</span><span class="nav-label">${t.label}${isPinned?' 📌':''}</span></button>`;
   }).join('')
-    + `<button onclick="addKartei()" title="Neue Kartei"><span class="nav-icon">➕</span>Kartei</button>`;
+    + `<button onclick="addKartei()" title="Neue Kartei"><span class="nav-icon">➕</span><span class="nav-label">Kartei</span></button>`;
   if(isSidebar){ return `<div class="brand-badge" style="margin-bottom:16px;">🎲</div>${tabsHtml}`; }
   return tabsHtml;
 }
