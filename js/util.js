@@ -370,7 +370,8 @@ function applyZoom(key, z, anchorX, anchorY){
   const ay = anchorY==null ? rect.height/2 : anchorY-rect.top;
   const old = svg.getBoundingClientRect();
   const fx = (wrap.scrollLeft+ax)/(old.width||1), fy = (wrap.scrollTop+ay)/(old.height||1);
-  svg.style.width = (z*100)+'%';
+  if(key==='map'){ v.z = z; mountMapSvg(); } // the map grows its drawing below 100% instead
+  else svg.style.width = (z*100)+'%';
   const now = svg.getBoundingClientRect();
   wrap.scrollLeft = fx*now.width - ax;
   wrap.scrollTop = fy*now.height - ay;
@@ -386,9 +387,11 @@ function fitZoom(key){
   if(!svg) return 1;
   const vb = svg.viewBox.baseVal;
   if(!vb || !vb.width) return 1;
+  // The map's viewBox grows when zoomed out; fit against the map itself.
+  const [bw, bh] = key==='map' && mapDom && mapDom.baseW ? [mapDom.baseW, mapDom.baseH] : [vb.width, vb.height];
   const cw = wrap.clientWidth, ch = wrap.clientHeight;
   // A hair smaller than exact, so rounding doesn't leave a pointless scrollbar.
-  return Math.max(0.05, Math.min(1, ch / (cw * vb.height / vb.width) * 0.99));
+  return Math.max(0.05, Math.min(1, ch / (cw * bh / bw) * 0.99));
 }
 function onZoomWheel(e, key){
   if(!e.ctrlKey) return; // plain wheel scrolls as usual
@@ -420,7 +423,10 @@ function zoomWrapAttrs(key, aspect){
   return `id="${key}-wrap" style="${aspect ? `aspect-ratio:${aspect};` : ''}" onscroll="onZoomScroll(this,'${key}')" onwheel="onZoomWheel(event,'${key}')"
     ontouchstart="onZoomTouchStart(event,'${key}')" ontouchmove="onZoomTouchMove(event,'${key}')" ontouchend="onZoomTouchEnd(event)" ontouchcancel="onZoomTouchEnd(event)"`;
 }
-function zoomSvgStyle(key){ return `width:${zoomView(key).z*100}%;max-width:none;height:auto;margin:0 auto;`; }
+function zoomSvgStyle(key){
+  const z = zoomView(key).z;
+  return `width:${(key==='map' ? Math.max(1, z) : z)*100}%;max-width:none;height:auto;margin:0 auto;`;
+}
 function zoomControlsHtml(key, fitTitle){
   return `<button class="icon-btn raised" title="Verkleinern" onclick="zoomBy('${key}',1/1.4)">−</button>
     <button class="icon-btn raised" title="${fitTitle||'Alles zeigen'}" onclick="applyZoom('${key}',fitZoom('${key}'))"><span id="${key}-zoom-label" style="font-size:11px;font-family:ui-monospace,monospace;">${Math.round(zoomView(key).z*100)}%</span></button>

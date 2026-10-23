@@ -117,7 +117,9 @@ function setMapGridType(type){
     : m.nodes}));
   saveState(); render();
 }
-function onMapGridSizeInput(el){
+// While dragging only the map is redrawn: a full render() would replace the
+// slider under the finger and end the drag on touch screens.
+function onMapGridSizeInput(el, done){
   const newSize = parseInt(el.value,10)||40;
   updateCurrentMap(m=>{
     const oldSize = m.gridSize||40;
@@ -145,7 +147,7 @@ function onMapGridSizeInput(el){
     }
     return {...m, gridSize:newSize, nodes};
   });
-  saveState(); render();
+  if(done){ saveState(); render(); } else mountMapSvg();
 }
 function toggleMapConnectMode(){
   ui.mapMoveArmedId = null; ui.mapBrush = null;
@@ -477,15 +479,24 @@ function mountMapSvg(){
   // tapped in at the edges too.
   const pad = cur.grid==='none' ? 30 : cur.gridSize*3;
   let W = 320, H = 220;
-  cur.nodes.forEach(n=>{ const r = mapNodeRadius(cur, n); if(n.x+r+pad>W) W = n.x+r+pad; if(n.y+r+pad>H) H = n.y+r+pad; });
   const topMargin = 30;
+  cur.nodes.forEach(n=>{ const r = mapNodeRadius(cur, n); if(n.x+r+pad>W) W = n.x+r+pad; if(n.y+r+pad>H) H = n.y+r+pad; });
+  // Fixed container shape = map proportions, so zooming doesn't grow the panel.
+  const aspect = `${W} / ${H+topMargin}`;
+  if(wrap.style.aspectRatio!==aspect) wrap.style.aspectRatio = aspect;
+  mapDom.baseW = W; mapDom.baseH = H+topMargin;
+  // Zoomed out below 100%: instead of shrinking the drawing inside the panel,
+  // show more of the map (grid and free space to tap new fields), filling the panel.
+  const z = zoomView('map').z;
+  if(z<1){
+    const px = z*wrap.clientWidth/W; // screen px per map unit at this zoom
+    W = Math.round(W/z);
+    H = Math.max(H, Math.round(wrap.clientHeight/px) - topMargin);
+  }
   const setAttr = (k, v) => { v = String(v); if(svg.getAttribute(k)!==v) svg.setAttribute(k, v); };
   setAttr('viewBox', `0 ${-topMargin} ${W} ${H+topMargin}`);
   setAttr('width', W); setAttr('height', H+topMargin);
   setAttr('style', zoomSvgStyle('map'));
-  // Fixed container shape = map proportions, so zooming doesn't grow the panel.
-  const aspect = `${W} / ${H+topMargin}`;
-  if(wrap.style.aspectRatio!==aspect) wrap.style.aspectRatio = aspect;
 
   const gridKey = `${cur.grid}|${cur.gridSize}|${W}|${H}`;
   if(mapDom.gridKey!==gridKey){ layer('map-grid').innerHTML = gridPatternSvg(cur.grid, W, H, cur.gridSize, 'map'); mapDom.gridKey = gridKey; }
@@ -680,7 +691,7 @@ function renderMapTab(){
         <button style="padding:6px 10px;font-size:12px;${cur.grid==='square'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('square')">Quadrate</button>
         <button style="padding:6px 10px;font-size:12px;${cur.grid==='hex'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('hex')">Hex</button>
       </div>
-      ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" style="width:100px;">` : ''}
+      ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" onchange="onMapGridSizeInput(this,true)" style="width:100px;">` : ''}
     </div>
     ${cur.grid==='hex' ? `<div style="display:flex;flex-direction:column;gap:4px;">
       <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '') : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
