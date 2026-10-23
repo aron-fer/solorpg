@@ -478,31 +478,38 @@ function mountMapSvg(){
   const layer = id => svg.querySelector('#'+id);
 
   // Size (fits all rooms) and zoom.
-  // On a grid, leave three free cells around the rooms so new ones can be
-  // tapped in at the edges too.
+  // On a grid, leave three free cells around the rooms (on every side, so the
+  // map can grow up and left too: coordinates may go negative).
   const pad = cur.grid==='none' ? 30 : cur.gridSize*3;
-  let W = 320, H = 220;
   const topMargin = 30;
-  cur.nodes.forEach(n=>{ const r = mapNodeRadius(cur, n); if(n.x+r+pad>W) W = n.x+r+pad; if(n.y+r+pad>H) H = n.y+r+pad; });
+  let X0 = 0, Y0 = 0, X1 = 320, Y1 = 220;
+  cur.nodes.forEach(n=>{
+    const r = mapNodeRadius(cur, n);
+    X0 = Math.min(X0, n.x-r-pad); Y0 = Math.min(Y0, n.y-r-pad);
+    X1 = Math.max(X1, n.x+r+pad); Y1 = Math.max(Y1, n.y+r+pad);
+  });
+  if(cur.grid==='none'){ X0 = 0; Y0 = 0; } // rooms-only maps keep their origin
+  let W = X1-X0, H = Y1-Y0;
   // Fixed container shape = map proportions, so zooming doesn't grow the panel.
   const aspect = `${W} / ${H+topMargin}`;
   if(wrap.style.aspectRatio!==aspect) wrap.style.aspectRatio = aspect;
   mapDom.baseW = W; mapDom.baseH = H+topMargin;
   // Zoomed out below 100%: instead of shrinking the drawing inside the panel,
-  // show more of the map (grid and free space to tap new fields), filling the panel.
+  // show more of the map around it (grid and free space to tap new fields).
   const z = zoomView('map').z;
   if(z<1){
     const px = z*wrap.clientWidth/W; // screen px per map unit at this zoom
-    W = Math.round(W/z);
-    H = Math.max(H, Math.round(wrap.clientHeight/px) - topMargin);
+    const W2 = Math.round(W/z), H2 = Math.max(H, Math.round(wrap.clientHeight/px) - topMargin);
+    X0 -= Math.round((W2-W)/2); Y0 -= Math.round((H2-H)/2);
+    W = W2; H = H2;
   }
   const setAttr = (k, v) => { v = String(v); if(svg.getAttribute(k)!==v) svg.setAttribute(k, v); };
-  setAttr('viewBox', `0 ${-topMargin} ${W} ${H+topMargin}`);
+  setAttr('viewBox', `${X0} ${Y0-topMargin} ${W} ${H+topMargin}`);
   setAttr('width', W); setAttr('height', H+topMargin);
   setAttr('style', zoomSvgStyle('map'));
 
-  const gridKey = `${cur.grid}|${cur.gridSize}|${W}|${H}`;
-  if(mapDom.gridKey!==gridKey){ layer('map-grid').innerHTML = gridPatternSvg(cur.grid, W, H, cur.gridSize, 'map'); mapDom.gridKey = gridKey; }
+  const gridKey = `${cur.grid}|${cur.gridSize}|${X0}|${Y0}|${W}|${H}`;
+  if(mapDom.gridKey!==gridKey){ layer('map-grid').innerHTML = gridPatternSvg(cur.grid, W, H, cur.gridSize, 'map', X0, Y0-topMargin, H+topMargin); mapDom.gridKey = gridKey; }
 
   const need = mapTileDefsNeeded(cur);
   if(mapDom.defsKey!==need.key){ layer('map-tile-defs').innerHTML = tileDefsSvg(need.baseIds, need.markIds); mapDom.defsKey = need.key; }

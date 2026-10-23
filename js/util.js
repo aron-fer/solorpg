@@ -443,7 +443,7 @@ function restoreZoomViews(){
 // Grid background as a single rect filled with a repeating <pattern> —
 // constant size no matter how big the map (instead of one element per cell).
 // Aligned to the same lattice as snapToMapGrid (origin 0,0).
-function gridPatternSvg(grid, W, H, s, idPrefix){
+function gridPatternSvg(grid, W, H, s, idPrefix, x0, y0, fullH){
   const id = (idPrefix||'grid')+'-pat';
   let tile;
   if(grid==='hex'){
@@ -454,5 +454,6 @@ function gridPatternSvg(grid, W, H, s, idPrefix){
   } else if(grid==='square'){
     tile = `<pattern id="${id}" patternUnits="userSpaceOnUse" x="0" y="0" width="${s}" height="${s}"><path d="M ${s} 0 L 0 0 0 ${s}" fill="none" stroke="var(--border)" stroke-width="1"></path></pattern>`;
   } else return '';
-  return `<defs>${tile}</defs><rect x="0" y="0" width="${W}" height="${H}" fill="url(#${id})" style="pointer-events:none;"></rect>`;
+  // The pattern stays anchored at 0,0 (where the hexes snap), the rect may start further up/left.
+  return `<defs>${tile}</defs><rect x="${x0||0}" y="${y0||0}" width="${W}" height="${fullH||H}" fill="url(#${id})" style="pointer-events:none;"></rect>`;
 }
