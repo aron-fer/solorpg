@@ -259,14 +259,15 @@ function currentTerrainContext(ignoreOverride){
   const map = getCurrentMap();
   const node = map && map.markerNodeId ? map.nodes.find(n=>n.id===map.markerNodeId) : null;
   // Terrain only counts on hex maps (square/no-grid maps are dungeons etc.).
-  if(!node || map.grid!=='hex' || !(node.terrain || node.settlement)) return node ? {terrain:null, settlement:null, node, source:'map'} : null;
+  const river = !!node && mapNodeOnRiver(map, node.id), lake = !!node && !!node.lake;
+  if(!node || map.grid!=='hex' || !(node.terrain || node.settlement || river || lake)) return node ? {terrain:null, settlement:null, node, source:'map'} : null;
   let coastal = false;
   if(map.grid==='hex'){
     // Any neighbouring hex (within ~1 cell) that is ocean makes it coastal.
     const reach = Math.sqrt(3)*map.gridSize*1.15;
     coastal = map.nodes.some(o=>o.id!==node.id && COASTAL_TERRAINS.has(o.terrain) && Math.hypot(o.x-node.x, o.y-node.y) <= reach);
   }
-  return {terrain:node.terrain, settlement:node.settlement, coastal, desert:DESERT_TERRAINS.has(node.terrain), node, source:'map'};
+  return {terrain:node.terrain, settlement:node.settlement, river, lake, coastal, desert:DESERT_TERRAINS.has(node.terrain), node, source:'map'};
 }
 // Ordered table-name prefixes for a context (settlement variants first).
 function terrainTablePrefixes(ctx){
@@ -279,15 +280,19 @@ function terrainTablePrefixes(ctx){
       out.push(base);
     });
   }
+  // A river or lake on the hex wins over the terrain beneath it.
+  if(ctx.river) TERRAIN_TABLE_NAMES.river.forEach(p=>out.push(p));
+  if(ctx.lake) TERRAIN_TABLE_NAMES.lake.forEach(p=>out.push(p));
   if(ctx.terrain) (TERRAIN_TABLE_NAMES[ctx.terrain]||[TERRAIN_BY_ID[ctx.terrain].label]).forEach(p=>out.push(p));
-  return out;
+  return [...new Set(out)];
 }
 function terrainContextLabel(ctx){
   if(!ctx) return null;
   const parts = [];
   if(ctx.settlement) parts.push(SETTLEMENT_BY_ID[ctx.settlement].label + (ctx.coastal ? ' (Coastal)' : ctx.desert ? ' (Desert)' : ''));
   if(ctx.terrain) parts.push(TERRAIN_BY_ID[ctx.terrain].label);
-  return parts.join(' auf ') || null;
+  const water = [ctx.river ? 'River' : null, ctx.lake ? 'Lake' : null].filter(Boolean).join(', ');
+  return [parts.join(' auf '), water].filter(Boolean).join(' · ') || null;
 }
 
 // ---- Shared tile definitions (large maps) ----

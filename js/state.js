@@ -106,6 +106,7 @@ function ensureCampaign(data){
       id: n.id||uid(), name: n.name||('Raum '+(idx+1)), num: n.num!=null?String(n.num):String(idx+1),
       x: n.x!=null?n.x:(60+(idx%4)*80), y: n.y!=null?n.y:(50+Math.floor(idx/4)*80),
       r: n.r!=null?n.r:16, desc: n.desc||'', terrain: n.terrain||null, settlement: n.settlement||null, area: n.area||'',
+      lake: !!n.lake,   // lake overlay on top of the terrain (hex maps)
     })),
     edges: (m.edges||[]).map(e=>({
       id: e.id||uid(), from:e.from, to:e.to,
@@ -113,6 +114,8 @@ function ensureCampaign(data){
       oneway: !!e.oneway,
       label: e.label||'', desc: e.desc||'',
     })),
+    // Rivers (hex maps): each runs through the centres of its hexes, in order.
+    rivers: (m.rivers||[]).filter(r=>r && Array.isArray(r.nodes)).map(r=>({id: r.id||uid(), nodes: r.nodes.filter(id=>typeof id==='string')})),
     turns: m.turns || null,   // turn tracker, normalised in turns.js
     tablePicks: normMapTablePicks(m.tablePicks),   // tables shown on this map, see map.js
   }));
@@ -205,7 +208,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   characterViewMode:'full',
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapRiverId:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,

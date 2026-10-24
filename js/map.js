@@ -160,12 +160,14 @@ function toggleMapConnectMode(){
 // it); '__clear' (removes terrain and settlement).
 function setMapBrush(id){
   ui.mapBrush = (ui.mapBrush===id) ? null : id;
+  if(ui.mapBrush!=='river') endMapRiver();
   ui.mapConnectFrom = null; ui.mapMoveArmedId = null;
   render();
 }
 function applyBrushToNode(n, brush){
   if(!brush) return n;
-  if(brush==='__clear') return {...n, terrain:null, settlement:null};
+  if(brush==='__clear') return {...n, terrain:null, settlement:null, lake:false};
+  if(brush==='ov:lake') return {...n, lake:!n.lake};
   if(brush.startsWith('set:')){
     const s = brush.slice(4);
     return {...n, settlement: n.settlement===s ? null : s};
@@ -207,8 +209,10 @@ function travelAndEncounter(id){
   render();
 }
 function brushLabel(brush){
-  if(brush==='__clear') return 'Gelände & Siedlung entfernen';
+  if(brush==='__clear') return 'Gelände, Siedlung & Lake entfernen';
   if(brush==='__delete') return 'Löschen';
+  if(brush==='river') return 'River';
+  if(brush==='ov:lake') return 'Lake (auf Gelände setzen)';
   if(brush.startsWith('set:')) return SETTLEMENT_BY_ID[brush.slice(4)].label;
   return TERRAIN_BY_ID[brush].label;
 }
@@ -223,6 +227,7 @@ function selectMapNode(id){
     }
     if(ui.mapMoveArmedId) return;
     if(ui.mapBrush==='__delete'){ deleteMapNode(id); return; }
+    if(ui.mapBrush==='river'){ extendMapRiver(id); return; }
     if(ui.mapBrush || (areasOn() && (ui.mapAreaBrush||'').trim())){ applyBrushesToNode(id); return; }
     startEditMapNode(id);
     return;
@@ -265,7 +270,7 @@ function onMapCanvasClick(evt){
     ui.mapConnectFrom=null; render();
     return;
   }
-  if(ui.mapBrush==='__delete') return; // delete brush: empty space does nothing
+  if(ui.mapBrush==='__delete' || ui.mapBrush==='river') return; // these brushes only act on fields
   addMapNodeAt(x, y, ui.mapBrush && ui.mapBrush!=='__clear' ? ui.mapBrush : null);
 }
 function setMarkerHere(nodeId){
@@ -277,7 +282,7 @@ function startEditMapNode(id){
   const n = cur && cur.nodes.find(x=>x.id===id);
   if(!n) return;
   ui.editingMapNodeId = id;
-  ui.mapNodeDraft = {name:n.name, num:n.num, desc:n.desc, r:n.r, terrain:n.terrain||null, settlement:n.settlement||null, area:n.area||''};
+  ui.mapNodeDraft = {name:n.name, num:n.num, desc:n.desc, r:n.r, terrain:n.terrain||null, settlement:n.settlement||null, area:n.area||'', lake:!!n.lake};
   render();
 }
 function cancelMapNodeModal(){ ui.editingMapNodeId=null; ui.mapNodeDraft=null; render(); }
@@ -292,6 +297,7 @@ function saveMapNode(){
     terrain: d.terrain || null,
     settlement: d.settlement || null,
     area: (d.area||'').trim(),
+    lake: !!d.lake,
   }:n)}));
   ui.editingMapNodeId=null; ui.mapNodeDraft=null;
   saveState(); render();
@@ -300,6 +306,7 @@ function deleteMapNode(id){
   updateCurrentMap(m=>({...m,
     nodes: m.nodes.filter(n=>n.id!==id),
     edges: m.edges.filter(e=>e.from!==id && e.to!==id),
+    rivers: riversWithoutNode(m.rivers, id),
     markerNodeId: m.markerNodeId===id ? null : m.markerNodeId,
   }));
   if(ui.selectedMapNodeId===id) ui.selectedMapNodeId=null;
@@ -368,6 +375,100 @@ function mapNodeMarkup(cur, n){
     ? `<text x="${n.x}" y="${n.y + r*0.8}" text-anchor="middle" font-size="${hexMode ? Math.max(8, r*0.28).toFixed(1) : 9}" font-weight="700" fill="${TERRAIN_INK}" stroke="${tileFill}" stroke-width="3" paint-order="stroke" style="pointer-events:none;">${escapeHtml(n.num)}</text>`
     : `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="12" fill="var(--text)" style="pointer-events:none;">${escapeHtml(n.num)}</text>`;
   return `<g onclick="event.stopPropagation(); selectMapNode('${n.id}')" style="cursor:pointer;">${shape}${numText}</g>`;
+}
+// ---- Rivers and lakes (hex maps), drawn like the Hyperborea atlas ----
+const MAP_WATER = '#5fc2b8', MAP_WATER_INK = '#1d4650';
+function mapNodeOnRiver(map, id){ return (map.rivers||[]).some(r=>r.nodes.length>1 && r.nodes.includes(id)); }
+// Removes a hex from every river; a river split by it becomes two.
+function riversWithoutNode(rivers, id){
+  const out = [];
+  (rivers||[]).forEach(r=>{
+    let part = [];
+    r.nodes.forEach(n=>{
+      if(n===id){ if(part.length>1) out.push({id: out.some(o=>o.id===r.id) ? uid() : r.id, nodes:part}); part = []; }
+      else part.push(n);
+    });
+    if(part.length>1) out.push({id: out.some(o=>o.id===r.id) ? uid() : r.id, nodes:part});
+  });
+  return out;
+}
+// River brush: first tap starts a river, each further tap extends it to that
+// hex, tapping its last hex again finishes it.
+function extendMapRiver(id){
+  const cur = getCurrentMap();
+  const river = ui.mapRiverId && (cur.rivers||[]).find(r=>r.id===ui.mapRiverId);
+  if(river && river.nodes[river.nodes.length-1]===id){ endMapRiver(); render(); return; }
+  if(river) updateCurrentMap(m=>({...m, rivers: m.rivers.map(r=>r.id===river.id ? {...r, nodes:[...r.nodes, id]} : r)}));
+  else {
+    const rid = uid();
+    updateCurrentMap(m=>({...m, rivers:[...(m.rivers||[]), {id:rid, nodes:[id]}]}));
+    ui.mapRiverId = rid;
+  }
+  saveState(); render();
+}
+// Finishes the river being drawn; a river of a single hex is dropped.
+function endMapRiver(){
+  if(!ui.mapRiverId) return;
+  const rid = ui.mapRiverId;
+  ui.mapRiverId = null;
+  if(getCurrentMap()) updateCurrentMap(m=>({...m, rivers:(m.rivers||[]).filter(r=>r.id!==rid || r.nodes.length>1)}));
+  saveState();
+}
+function removeRiversAtNode(id){
+  updateCurrentMap(m=>({...m, rivers: riversWithoutNode(m.rivers, id)}));
+  saveState(); render();
+}
+function riverPathD(pts, seed){
+  // Gentle meander: each step curves to alternating sides around its midpoint.
+  let d = `M${pts[0].x},${pts[0].y}`;
+  for(let i=1;i<pts.length;i++){
+    const a = pts[i-1], b = pts[i];
+    const mx = (a.x+b.x)/2, my = (a.y+b.y)/2, L = Math.hypot(b.x-a.x, b.y-a.y)||1;
+    const side = ((i+seed)%2 ? 1 : -1) * L*0.12;
+    const cx = (a.x+mx)/2 - (b.y-a.y)/L*side, cy = (a.y+my)/2 + (b.x-a.x)/L*side;
+    d += ` Q${cx.toFixed(1)},${cy.toFixed(1)} ${mx.toFixed(1)},${my.toFixed(1)} T${b.x},${b.y}`;
+  }
+  return d;
+}
+function lakeBlobSvg(x, y, s){
+  // Irregular pond in the 40-unit space, scaled by s.
+  const P = (dx, dy) => `${(x+dx*s).toFixed(1)},${(y+dy*s).toFixed(1)}`;
+  const d = `M${P(-14,-2)} C${P(-16,-14)} ${P(-2,-17)} ${P(6,-11)} C${P(15,-12)} ${P(18,-1)} ${P(12,6)} C${P(9,15)} ${P(-4,14)} ${P(-7,8)} C${P(-12,9)} ${P(-15,5)} ${P(-14,-2)} Z`;
+  return `<path d="${d}" fill="${MAP_WATER}" stroke="${MAP_WATER_INK}" stroke-width="${(1.8*s).toFixed(2)}" stroke-linejoin="round"></path>`
+    + `<path d="M${P(-6,-1)} q${(3*s).toFixed(1)},${(-2*s).toFixed(1)} ${(6*s).toFixed(1)},0 t${(6*s).toFixed(1)},0" fill="none" stroke="${MAP_WATER_INK}" stroke-width="${(0.9*s).toFixed(2)}" opacity="0.6"></path>`;
+}
+function mapWaterMarkup(cur){
+  if(cur.grid!=='hex') return '';
+  const byId = new Map(cur.nodes.map(n=>[n.id, n]));
+  const k = cur.gridSize/40;
+  let out = '';
+  (cur.rivers||[]).forEach((r, ri)=>{
+    const pts = r.nodes.map(id=>byId.get(id)).filter(Boolean);
+    if(pts.length<2) return;
+    const d = riverPathD(pts, ri);
+    out += `<path d="${d}" fill="none" stroke="${MAP_WATER_INK}" stroke-width="${(5.2*k).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"></path>`
+      + `<path d="${d}" fill="none" stroke="${MAP_WATER}" stroke-width="${(3*k).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"></path>`;
+  });
+  // Lakes above the rivers that run into them; beside a city/town symbol.
+  cur.nodes.forEach(n=>{
+    if(!n.lake) return;
+    const shared = SETTLEMENT_BY_ID[n.settlement] && TERRAIN_BY_ID[n.terrain];
+    out += shared ? lakeBlobSvg(n.x - 13*k, n.y + 10*k, 0.6*k) : lakeBlobSvg(n.x, n.y - 2*k, 1.05*k);
+  });
+  // The river being drawn: mark its current end.
+  const open = ui.mapRiverId && (cur.rivers||[]).find(r=>r.id===ui.mapRiverId);
+  const end = open && byId.get(open.nodes[open.nodes.length-1]);
+  if(end) out += `<circle cx="${end.x}" cy="${end.y}" r="${(6*k).toFixed(1)}" fill="${MAP_WATER}" stroke="${MAP_WATER_INK}" stroke-width="${(2*k).toFixed(1)}"></circle>`;
+  return out;
+}
+function waterSwatch(id, label, handler, current){
+  const on = current===id;
+  const icon = id==='river'
+    ? `<path d="M6,26 Q12,18 17,21 T28,10" fill="none" stroke="${MAP_WATER_INK}" stroke-width="5" stroke-linecap="round"></path><path d="M6,26 Q12,18 17,21 T28,10" fill="none" stroke="${MAP_WATER}" stroke-width="3" stroke-linecap="round"></path>`
+    : lakeBlobSvg(17, 18, 0.62);
+  return `<button title="${escapeHtml(label)}" onclick="${handler}('${id}')"
+      style="border-radius:8px;padding:2px;border:2px solid ${on?'var(--gold)':'transparent'};background:${on?'var(--panel-raised)':'transparent'};line-height:0;">
+      <svg viewBox="0 0 34 34" width="34" height="34" aria-hidden="true"><polygon points="${hexCornersPoints(17,17,16)}" fill="#e9c79c" stroke="${TERRAIN_INK}" stroke-width="1"></polygon>${icon}</svg></button>`;
 }
 const MAP_MARKER_RED = '#d8322a';
 // Selection / move target outlines and the 📍 party marker.
@@ -475,7 +576,7 @@ function mountMapSvg(){
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('onclick', 'onMapCanvasClick(event)');
     svg.innerHTML = `<defs><marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--gold-dim)"></path></marker><g id="map-tile-defs"></g></defs>
-      <g id="map-grid"></g><g id="map-nodes"></g><g id="map-edges" style="pointer-events:none;"></g><g id="map-edge-hits"></g><g id="map-overlay" style="pointer-events:none;"></g>`;
+      <g id="map-grid"></g><g id="map-nodes"></g><g id="map-water" style="pointer-events:none;"></g><g id="map-edges" style="pointer-events:none;"></g><g id="map-edge-hits"></g><g id="map-overlay" style="pointer-events:none;"></g>`;
     mapDom = {svg, mapId:cur.id, grid:cur.grid, gridSize:cur.gridSize, images:TERRAIN_IMAGES, defsKey:null, gridKey:null, layers:{}, nodeEls:new Map(), order:[]};
   }
   const svg = mapDom.svg;
@@ -556,6 +657,7 @@ function mountMapSvg(){
   const setLayer = (id, markup) => { if(mapDom.layers[id]!==markup){ layer(id).innerHTML = markup; mapDom.layers[id] = markup; } };
   setLayer('map-edges', lines);
   setLayer('map-edge-hits', hits);
+  setLayer('map-water', mapWaterMarkup(cur));
   setLayer('map-overlay', mapOverlayMarkup(cur));
 
   // Re-appending an already placed svg would detach it (→ full restyle).
@@ -708,7 +810,7 @@ function renderMapTab(){
       ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" onchange="onMapGridSizeInput(this,true)" style="width:100px;">` : ''}
     </div>
     ${cur.grid==='hex' ? `<div style="display:flex;flex-direction:column;gap:4px;">
-      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — '+(ui.mapBrush==='__delete' ? 'Feld tippen = Feld löschen' : 'leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') ? ' (nochmal = entfernen)' : '')) : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
+      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — '+(ui.mapBrush==='__delete' ? 'Feld tippen = Feld löschen' : ui.mapBrush==='river' ? (ui.mapRiverId ? 'nächstes Feld tippen = Fluss verlängern, letztes Feld nochmal = Fluss fertig' : 'erstes Feld des Flusses tippen') : 'leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') || ui.mapBrush==='ov:lake' ? ' (nochmal = entfernen)' : '')) : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
       ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
     </div>` : ''}
     ${areasOn() ? `<div style="display:flex;flex-direction:column;gap:4px;">
@@ -800,11 +902,13 @@ function renderTerrainPalette(current, handler, withSettlements){
   const swatch = (id, label, swatchId, on) => `<button title="${escapeHtml(label)}" onclick="${handler}('${id}')"
       style="border-radius:8px;padding:2px;border:2px solid ${on?'var(--gold)':'transparent'};background:${on?'var(--panel-raised)':'transparent'};line-height:0;">
       ${terrainSwatchSvg(swatchId, 34)}</button>`;
-  const items = [{id:'__clear', label: withSettlements ? 'Gelände & Siedlung entfernen' : 'Kein Gelände'}, ...TERRAINS];
+  const items = [{id:'__clear', label: withSettlements ? 'Gelände, Siedlung & Lake entfernen' : 'Kein Gelände'}, ...TERRAINS];
   let html = items.map(t=>swatch(t.id, t.label, t.id==='__clear' ? null : t.id, (current||'__clear')===t.id)).join('');
   if(withSettlements){
     html += `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
       + SETTLEMENTS.map(s=>swatch('set:'+s.id, s.label+' (auf Gelände setzen)', s.id, current==='set:'+s.id)).join('')
+      + waterSwatch('ov:lake', 'Lake (auf Gelände setzen)', handler, current)
+      + waterSwatch('river', 'River (Feld für Feld antippen)', handler, current)
       + `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
       + `<button title="Löschen (Feld antippen = Feld löschen)" onclick="${handler}('__delete')"
           style="border-radius:8px;width:38px;height:38px;font-size:18px;border:2px solid ${current==='__delete'?'var(--wax)':'transparent'};background:${current==='__delete'?'var(--panel-raised)':'transparent'};">🗑</button>`;
@@ -834,7 +938,11 @@ function renderMapNodeModal(){
     ${hexMode ? `<span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
     ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
     <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
-    ${renderSettlementChoice(d.settlement)}` : ''}
+    ${renderSettlementChoice(d.settlement)}
+    <div class="row wrap" style="gap:8px;">
+      <button class="btn ${d.lake?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="ui.mapNodeDraft.lake=!ui.mapNodeDraft.lake; render();">${d.lake?'☑':'☐'} Lake</button>
+      ${mapNodeOnRiver(cur, id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeRiversAtNode('${id}')">River hier entfernen</button>` : ''}
+    </div>` : ''}
     ${areasOn() ? `<span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
     <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Gebiet…">
     ${areaDatalistHtml()}` : ''}
