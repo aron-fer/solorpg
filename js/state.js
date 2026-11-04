@@ -1,4 +1,7 @@
 // Data model, migrations (ensureCampaign), STATE/ui, persistence.
+function normMapLines(lines){
+  return (lines||[]).filter(r=>r && Array.isArray(r.nodes)).map(r=>({id: r.id||uid(), nodes: r.nodes.filter(id=>typeof id==='string')}));
+}
 function emptyCampaignData(){
   return {
     tables:[], combos:[], log:[], characters:[], activeCharacterId:null, karteien:[], statblocks:[], journal:[],
@@ -114,8 +117,9 @@ function ensureCampaign(data){
       oneway: !!e.oneway,
       label: e.label||'', desc: e.desc||'',
     })),
-    // Rivers (hex maps): each runs through the centres of its hexes, in order.
-    rivers: (m.rivers||[]).filter(r=>r && Array.isArray(r.nodes)).map(r=>({id: r.id||uid(), nodes: r.nodes.filter(id=>typeof id==='string')})),
+    // Rivers and roads (hex maps): each runs through the centres of its hexes, in order.
+    rivers: normMapLines(m.rivers),
+    roads: normMapLines(m.roads),
     turns: m.turns || null,   // turn tracker, normalised in turns.js
     tablePicks: normMapTablePicks(m.tablePicks),   // tables shown on this map, see map.js
   }));
@@ -208,7 +212,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   characterViewMode:'full',
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapRiverId:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
