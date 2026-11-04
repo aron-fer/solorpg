@@ -903,7 +903,8 @@ function renderTerrainPalette(current, handler, withSettlements){
       style="border-radius:8px;padding:2px;border:2px solid ${on?'var(--gold)':'transparent'};background:${on?'var(--panel-raised)':'transparent'};line-height:0;">
       ${terrainSwatchSvg(swatchId, 34)}</button>`;
   const items = [{id:'__clear', label: withSettlements ? 'Gelände, Siedlung & Lake entfernen' : 'Kein Gelände'}, ...TERRAINS];
-  let html = items.map(t=>swatch(t.id, t.label, t.id==='__clear' ? null : t.id, (current||'__clear')===t.id)).join('');
+  // Brush bar: no brush = nothing highlighted. Field dialog: no terrain = "Kein Gelände".
+  let html = items.map(t=>swatch(t.id, t.label, t.id==='__clear' ? null : t.id, (withSettlements ? current : (current||'__clear'))===t.id)).join('');
   if(withSettlements){
     html += `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
       + SETTLEMENTS.map(s=>swatch('set:'+s.id, s.label+' (auf Gelände setzen)', s.id, current==='set:'+s.id)).join('')
