@@ -196,7 +196,7 @@ function migrateLegacy(parsed){
 
 let STATE = { campaigns:[], campaignData:{}, activeCampaignId:null };
 let ui = {
-  activeTab:'notes', managing:false, confirmClear:{oracle:false, battle:false},
+  activeTab:'notes', managing:false, headerMenuOpen:false, confirmClear:{oracle:false, battle:false},
   formulaOracle:'', formulaBattle:'',
   editingTableId:null, tableDraft:null,
   tableSelectMode:false, selectedTableIds:[], confirmBulkDeleteTables:false, confirmDeleteTableGroup:null, bulkGroupChoice:'', bulkGroupNewName:'',
@@ -211,7 +211,9 @@ let ui = {
   showCampaignSwitcher:false, editingCampaignId:null, campaignNameDraft:'',
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
-  characterViewMode:'full',
+  // Last chosen character view, remembered on this device.
+  tableQuery:'',
+  characterViewMode:(()=>{ try{ const v = localStorage.getItem('solorpg-character-view'); return ['full','statblock','quick'].includes(v) ? v : 'full'; }catch(e){ return 'full'; } })(),
   selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,

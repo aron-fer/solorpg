@@ -610,6 +610,77 @@ function renderPositionPanel(){
       : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes.${active.areasEnabled ? ' Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.' : ''}</p>`}
   </div>`;
 }
+// Helper tables that are only rolled from other tables (terrain sub-tables
+// like "Hills: ANIMAL 1", special encounters like "Special: Army Ants").
+// Hidden from the list while playing; search and edit mode still show them.
+function isHelperTable(name){ return /: [A-Z][A-Z ]*( \d+)?$/.test(name) || /^Special: /.test(name); }
+function onTableQuery(el){
+  ui.tableQuery = el.value;
+  const box = document.getElementById('table-list');
+  if(box) box.innerHTML = renderTableListHtml();
+}
+function clearTableQuery(){ ui.tableQuery = ''; render(); }
+function renderTableListHtml(){
+  const active = getActive();
+  const renderTableRow = (t, idxInGroup, groupLen, noMove) => {
+    const selected = ui.selectedTableIds.includes(t.id);
+    return `
+    <div class="row" style="gap:8px;">
+      ${ui.tableSelectMode ? `<input type="checkbox" ${selected?'checked':''} onchange="toggleTableSelected('${t.id}')" style="width:20px;height:20px;flex-shrink:0;">` : ''}
+      <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;${selected?'border-color:var(--gold);background:var(--gold-dim);':''}" onclick="${ui.tableSelectMode?`toggleTableSelected('${t.id}')`:`handleRollTable('${t.id}')`}">
+        <span>${escapeHtml(t.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${t.mode==='aspects' ? `${(t.aspects||[]).length} Aspekte` : `${t.entries.length} Einträge`}</span>
+      </button>
+      ${(ui.managing && !ui.tableSelectMode) ? `${noMove ? '' : `<button class="icon-btn raised" style="${idxInGroup===0?'opacity:0.3;':''}" ${idxInGroup===0?'disabled':''} onclick="moveTable('${t.id}',-1)">↑</button>
+      <button class="icon-btn raised" style="${idxInGroup===groupLen-1?'opacity:0.3;':''}" ${idxInGroup===groupLen-1?'disabled':''} onclick="moveTable('${t.id}',1)">↓</button>`}
+      <button class="icon-btn raised" onclick="startEditTable('${t.id}')">✎</button>` : ''}
+    </div>`;
+  };
+  const q = (ui.tableQuery||'').trim().toLowerCase();
+  if(q){
+    const hits = active.tables.filter(t=>t.name.toLowerCase().includes(q));
+    if(!hits.length) return `<p class="small-muted" style="margin:0;">Keine Tabelle gefunden.</p>`;
+    const shown = hits.slice(0, 60);
+    return shown.map((t,idx)=>renderTableRow(t, idx, shown.length, true)).join('')
+      + (hits.length>shown.length ? `<p class="small-muted" style="margin:0;">… und ${hits.length-shown.length} weitere – Suche genauer eingrenzen.</p>` : '');
+  }
+  // While playing, helper tables stay out of the list.
+  const visible = (ui.managing || ui.tableSelectMode) ? active.tables : active.tables.filter(t=>!isHelperTable(t.name));
+  const hiddenCount = active.tables.length - visible.length;
+  const ungrouped = visible.filter(t=>!t.group);
+  const groupNames = active.groupOrder.filter(g=>visible.some(t=>t.group===g));
+  let html = ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
+  html += groupNames.map((g,gIdx)=>{
+    const members = visible.filter(t=>t.group===g);
+    const collapsed = !!active.collapsedGroups[g];
+    const nSel = members.filter(t=>ui.selectedTableIds.includes(t.id)).length;
+    const groupCheck = ui.tableSelectMode
+      ? `<input type="checkbox" ${nSel===members.length?'checked':''} title="Alle ${members.length} Tabellen dieser Gruppe auswählen" onchange="toggleGroupSelected(${jsStr(g)})" style="width:20px;height:20px;flex-shrink:0;">`
+      : '';
+    const confirming = ui.confirmDeleteTableGroup===g;
+    return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
+      <div class="row between" style="gap:8px;">
+        ${groupCheck}
+        <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:6px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
+          <span class="label" style="color:var(--gold);">${collapsed?'▶':'▼'} ${escapeHtml(g)}</span>
+          <span class="small-muted">${ui.tableSelectMode && nSel ? nSel+' / ' : ''}${members.length}</span>
+        </button>
+        ${ui.managing && !ui.tableSelectMode ? `<div class="row" style="gap:4px;">
+          <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup(${jsStr(g)},-1)">↑</button>
+          <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup(${jsStr(g)},1)">↓</button>
+          <button class="icon-btn raised" style="color:var(--wax);" title="Ganze Gruppe löschen" onclick="askDeleteTableGroup(${jsStr(g)})">🗑</button>
+        </div>` : ''}
+      </div>
+      ${confirming ? `<div class="row wrap" style="gap:6px;padding:4px 0 6px;">
+        <span class="small-muted" style="flex:1;min-width:160px;">Alle ${members.length} Tabellen in „${escapeHtml(g)}“ löschen? (Vorher wird automatisch gesichert.)</span>
+        <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteTableGroup(${jsStr(g)})">Gruppe löschen</button>
+        <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteTableGroup()">Abbrechen</button>
+      </div>` : ''}
+      ${collapsed ? '' : members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}
+    </div>`;
+  }).join('');
+  if(hiddenCount) html += `<p class="small-muted" style="margin:6px 0 0;">${hiddenCount} Untertabellen (z.B. „Hills: ANIMAL 1“, „Special: …“) ausgeblendet – die Suche findet sie, im Bearbeiten-Modus (⚙) erscheinen sie wieder.</p>`;
+  return html;
+}
 function renderDiceTab(){
   const active = getActive();
   let html = `<div class="grid-cards">`;
@@ -647,51 +718,11 @@ function renderDiceTab(){
         </div>
       </div>`;
     }
-    const renderTableRow = (t, idxInGroup, groupLen) => {
-      const selected = ui.selectedTableIds.includes(t.id);
-      return `
-      <div class="row" style="gap:8px;">
-        ${ui.tableSelectMode ? `<input type="checkbox" ${selected?'checked':''} onchange="toggleTableSelected('${t.id}')" style="width:20px;height:20px;flex-shrink:0;">` : ''}
-        <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;${selected?'border-color:var(--gold);background:var(--gold-dim);':''}" onclick="${ui.tableSelectMode?`toggleTableSelected('${t.id}')`:`handleRollTable('${t.id}')`}">
-          <span>${escapeHtml(t.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${t.mode==='aspects' ? `${(t.aspects||[]).length} Aspekte` : `${t.entries.length} Einträge`}</span>
-        </button>
-        ${(ui.managing && !ui.tableSelectMode) ? `<button class="icon-btn raised" style="${idxInGroup===0?'opacity:0.3;':''}" ${idxInGroup===0?'disabled':''} onclick="moveTable('${t.id}',-1)">↑</button>
-        <button class="icon-btn raised" style="${idxInGroup===groupLen-1?'opacity:0.3;':''}" ${idxInGroup===groupLen-1?'disabled':''} onclick="moveTable('${t.id}',1)">↓</button>
-        <button class="icon-btn raised" onclick="startEditTable('${t.id}')">✎</button>` : ''}
-      </div>`;
-    };
-    const ungrouped = active.tables.filter(t=>!t.group);
-    const groupNames = active.groupOrder.filter(g=>active.tables.some(t=>t.group===g));
-    html += ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
-    html += groupNames.map((g,gIdx)=>{
-      const members = active.tables.filter(t=>t.group===g);
-      const collapsed = !!active.collapsedGroups[g];
-      const nSel = members.filter(t=>ui.selectedTableIds.includes(t.id)).length;
-      const groupCheck = ui.tableSelectMode
-        ? `<input type="checkbox" ${nSel===members.length?'checked':''} title="Alle ${members.length} Tabellen dieser Gruppe auswählen" onchange="toggleGroupSelected(${jsStr(g)})" style="width:20px;height:20px;flex-shrink:0;">`
-        : '';
-      const confirming = ui.confirmDeleteTableGroup===g;
-      return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
-        <div class="row between" style="gap:8px;">
-          ${groupCheck}
-          <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:6px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
-            <span class="label" style="color:var(--gold);">${collapsed?'▶':'▼'} ${escapeHtml(g)}</span>
-            <span class="small-muted">${ui.tableSelectMode && nSel ? nSel+' / ' : ''}${members.length}</span>
-          </button>
-          ${ui.managing && !ui.tableSelectMode ? `<div class="row" style="gap:4px;">
-            <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup(${jsStr(g)},-1)">↑</button>
-            <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup(${jsStr(g)},1)">↓</button>
-            <button class="icon-btn raised" style="color:var(--wax);" title="Ganze Gruppe löschen" onclick="askDeleteTableGroup(${jsStr(g)})">🗑</button>
-          </div>` : ''}
-        </div>
-        ${confirming ? `<div class="row wrap" style="gap:6px;padding:4px 0 6px;">
-          <span class="small-muted" style="flex:1;min-width:160px;">Alle ${members.length} Tabellen in „${escapeHtml(g)}“ löschen? (Vorher wird automatisch gesichert.)</span>
-          <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteTableGroup(${jsStr(g)})">Gruppe löschen</button>
-          <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteTableGroup()">Abbrechen</button>
-        </div>` : ''}
-        ${collapsed ? '' : members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}
-      </div>`;
-    }).join('');
+    html += `<div class="row" style="gap:6px;margin:2px 0 4px;">
+      <input type="search" value="${escapeHtml(ui.tableQuery||'')}" placeholder="🔍 Tabelle suchen…" oninput="onTableQuery(this)" style="flex:1;min-width:0;">
+      ${ui.tableQuery ? `<button class="icon-btn raised" title="Suche leeren" onclick="clearTableQuery()">✕</button>` : ''}
+    </div>
+    <div id="table-list" style="display:flex;flex-direction:column;gap:8px;">${renderTableListHtml()}</div>`;
   }
   if(ui.managing && active.tables.length>0){
     html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, <code style="color:var(--gold);">{{25%: Text}}</code> zeigt den Text mit 25 % Chance, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;

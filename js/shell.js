@@ -219,6 +219,7 @@ function togglePinTab(id){
   });
   saveState(); render();
 }
+function toggleHeaderMenu(){ ui.headerMenuOpen = !ui.headerMenuOpen; render(); }
 function toggleManaging(){
   ui.managing=!ui.managing;
   if(!ui.managing){ ui.tableSelectMode=false; ui.selectedTableIds=[]; ui.confirmBulkDeleteTables=false; }
@@ -240,13 +241,20 @@ function renderHeader(){
       </div>
     </div>
     <div class="header-actions">
-      <button class="icon-btn" onclick="openOptions()" title="Optionen">🛠</button>
       ${getAllTabs().length>1 ? `<button class="icon-btn splitview-btn ${active.splitView?'active':''}" onclick="toggleSplitView()" title="Splitscreen (bis zu 4 Tabs nebeneinander)">⊞</button>` : ''}
-      <button class="icon-btn" onclick="exportData()" title="Kampagne exportieren">⬇</button>
-      <button class="icon-btn" onclick="triggerImport()" title="Kampagne importieren">⬆</button>
-      ${showGear ? `<button class="icon-btn ${ui.managing?'active':''}" onclick="toggleManaging()" title="Verwalten">⚙</button>` : ''}
+      ${showGear ? `<button class="btn ${ui.managing?'btn-gold':'btn-raised'} edit-toggle" onclick="toggleManaging()">${ui.managing?'✓ Fertig':'✎ Bearbeiten'}</button>` : ''}
+      <div style="position:relative;">
+        <button class="icon-btn ${ui.headerMenuOpen?'active':''}" onclick="toggleHeaderMenu()" title="Menü" aria-label="Menü">⋯</button>
+        ${ui.headerMenuOpen ? `<div class="menu-backdrop" onclick="toggleHeaderMenu()"></div>
+        <div class="header-menu">
+          <button onclick="toggleHeaderMenu(); openOptions()">🛠 Optionen</button>
+          <button onclick="toggleHeaderMenu(); exportData()">⬇ Kampagne exportieren</button>
+          <button onclick="toggleHeaderMenu(); triggerImport()">⬆ Kampagne importieren</button>
+        </div>` : ''}
+      </div>
     </div>
   </div>
+  ${ui.managing && showGear ? `<div class="edit-banner"><span>✎ Bearbeiten-Modus</span><button class="btn btn-gold" onclick="toggleManaging()">✓ Fertig</button></div>` : ''}
   ${saveError ? `<div class="panel" style="border-color:var(--wax);background:rgba(139,46,46,0.18);">
     <div class="row between wrap" style="gap:8px;">
       <span style="font-size:14px;">⚠️ ${escapeHtml(saveError)}</span>

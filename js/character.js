@@ -342,9 +342,9 @@ function renderFieldControl(sectionId, f){
     const tv = f.value;
     return `<div style="display:flex;flex-direction:column;gap:6px;">
       <div style="overflow-x:auto;padding-bottom:12px;scrollbar-gutter:stable;">
-        <table style="border-collapse:collapse;width:100%;min-width:${Math.max(300, tv.columns.length*110)}px;">
+        <table style="border-collapse:collapse;width:100%;min-width:${tv.columns.length*72}px;">
           <thead><tr>
-            ${tv.columns.map((c,ci)=>`<th style="padding:2px 4px;text-align:left;">
+            ${tv.columns.map((c,ci)=>`<th style="padding:2px 4px;text-align:left;${ci===0 && tv.columns.length>2 ? 'width:34%;' : ''}">
               <div class="row" style="gap:2px;">
                 <input type="text" value="${escapeHtml(c)}" oninput="renameTableColumn('${sectionId}','${f.id}',${ci},this)" style="font-size:11px;font-weight:600;padding:4px 6px;">
                 ${ui.managing ? `<button class="x-btn" onclick="removeTableColumn('${sectionId}','${f.id}',${ci})">✕</button>` : ''}
@@ -391,7 +391,11 @@ function renderFieldRow(section, f, fIdx, showTierBadge, opts){
     ${renderFieldControl(section.id, f)}
   </div>`;
 }
-function setCharacterViewMode(mode){ ui.characterViewMode = mode; render(); }
+function setCharacterViewMode(mode){
+  ui.characterViewMode = mode;
+  try{ localStorage.setItem('solorpg-character-view', mode); }catch(e){}
+  render();
+}
 function renderCharacterTab(){
   const active = getActive();
   const currentChar = getCurrentCharacter();
