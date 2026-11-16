@@ -219,7 +219,7 @@ let ui = {
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
-  showStatblockCharPicker:false, battlePasteOpen:false, battlePasteText:'', battlePasteCount:'', battleEditId:null, battleSpecialsOpen:[], battleTarget:{},
+  showStatblockCharPicker:false, battlePasteOpen:false, battlePasteText:'', battlePasteCount:'', battleEditId:null, battleSpecialsOpen:[], battleTarget:{}, battleActiveSb:null,
   bestiaryOpen:false, bestiaryPick:null, bestiaryQuery:'', bestiaryDice:'', bestiaryCount:'',
   relationsConnectFrom:null, relationRollResult:null,
   editingRelationNodeId:null, relationNodeDraft:null,

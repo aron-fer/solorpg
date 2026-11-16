@@ -122,6 +122,13 @@ textarea { resize:none; font-family: Georgia, serif; }
 .quick-grid > .quick-wide { grid-column:span 2; min-width:0; }
 .fav-btn { background:transparent; border:none; color:var(--text-faint); font-size:18px; padding:4px 2px; flex-shrink:0; line-height:1; }
 .fav-btn.on { color:var(--gold); }
+.battle-stats-big { display:flex; flex-wrap:wrap; gap:2px 12px; font-size:13px; }
+.battle-stats-big b { font-size:15px; }
+.battle-stats-atk { font-size:12.5px; color:var(--text-muted); }
+/* One damage bar for the fight, above the bottom tab bar (beside the sidebar on wide screens). */
+.battle-dmg-bar { position:fixed; left:0; right:0; bottom:calc(57px + env(safe-area-inset-bottom, 0px)); z-index:20; display:flex; align-items:center; gap:6px; padding:8px 12px; background:var(--panel); border-top:1px solid var(--gold-dim); box-shadow:0 -6px 18px rgba(0,0,0,0.5); }
+.battle-dmg-target { flex:1; min-width:0; font-size:13px; color:var(--gold); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+@media (min-width: 768px) { .battle-dmg-bar { left:88px; bottom:0; padding:10px 24px; } }
 #file-import { display:none; }
 .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 /* Character statblock */

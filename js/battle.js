@@ -155,7 +155,27 @@ function onStatblockStatline(id, el){
   updateStatblock(id, sb=>({...sb, stats:p.stats}));
   saveState();
 }
-function selectBattleTarget(sbId, memberId){ ui.battleTarget[sbId] = memberId; render(); }
+function selectBattleTarget(sbId, memberId){ ui.battleTarget[sbId] = memberId; ui.battleActiveSb = sbId; render(); }
+// The enemy group the damage bar acts on: the one last tapped, else the first still standing.
+function battleActiveEnemy(){
+  const enemies = getActive().statblocks.filter(sb=>sb.kind!=='pc' && sb.members.length);
+  return enemies.find(sb=>sb.id===ui.battleActiveSb) || enemies.find(sb=>sb.members.some(m=>mCur(m)>0)) || enemies[0] || null;
+}
+// One damage/heal bar for the whole fight, fixed above the tab bar.
+function renderBattleDamageBar(){
+  const sb = battleActiveEnemy();
+  if(!sb) return '';
+  const target = battleTargetOf(sb), i = sb.members.indexOf(target)+1;
+  const hd = enemyHdMode() ? 'HD ' : '';
+  return `<div class="battle-dmg-bar">
+    <span class="battle-dmg-target">🎯 ${escapeHtml(sb.name||'Gegner')} ${sb.members.length>1 ? i+' ' : ''}· ${hd}${mCur(target)}/${mMax(target)}</span>
+    <button class="sb-step" onclick="stepBattleDmg('${sb.id}',-1)" aria-label="−1">−</button>
+    <input type="number" min="1" id="dmg-${sb.id}" placeholder="0" style="width:52px;padding:4px 6px;" onkeydown="if(event.key==='Enter'){applyBattleHp('${sb.id}',-1);}">
+    <button class="sb-step" onclick="stepBattleDmg('${sb.id}',1)" aria-label="+1">+</button>
+    <button class="btn btn-outline-wax" style="padding:4px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',-1)">Schaden</button>
+    <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',1)">Heilen</button>
+  </div>`;
+}
 function battleTargetOf(sb){
   const sel = sb.members.find(m=>m.id===ui.battleTarget[sb.id]);
   return sel || sb.members.find(m=>mCur(m)>0) || sb.members[0];
@@ -170,7 +190,7 @@ function applyBattleHp(sbId, sign){
   if(!target) return;
   const [cur, max] = enemyHdMode() ? ['hd','hdMax'] : ['hp','max'];
   updateStatblock(sbId, x=>({...x, members: x.members.map(m=>m.id!==target.id ? m : {...m, [cur]: sign<0 ? Math.max(0, m[cur]-amount) : Math.min(m[max]||m[cur]+amount, m[cur]+amount)})}));
-  ui.battleTarget[sbId] = target.id;
+  ui.battleTarget[sbId] = target.id; ui.battleActiveSb = sbId;
   saveState(); render();
 }
 function stepBattleDmg(sbId, d){
@@ -287,24 +307,24 @@ function renderEnemyBlock(sb){
   });
   const chips = sb.members.map((m,i)=>{
     const cur = mCur(m), max = mMax(m);
-    const dead = cur<=0, low = !dead && max && cur<=max/3, sel = target && m.id===target.id;
+    const active = battleActiveEnemy();
+    const dead = cur<=0, low = !dead && max && cur<=max/3, sel = active && active.id===sb.id && target && m.id===target.id;
     return `<button class="hp-chip${dead?' dead':''}${low?' low':''}${sel?' sel':''}" onclick="selectBattleTarget('${sb.id}','${m.id}')">${i+1} · ${hdMode?'HD ':''}<b>${cur}</b>/${max}</button>`;
   }).join('');
-  const ctrls = sb.members.length ? `<button class="sb-step" onclick="stepBattleDmg('${sb.id}',-1)" aria-label="−1">−</button>
-            <input type="number" min="1" id="dmg-${sb.id}" placeholder="${target?`#${sb.members.indexOf(target)+1}`:''}" style="width:58px;padding:4px 6px;" onkeydown="if(event.key==='Enter'){applyBattleHp('${sb.id}',-1);}">
-            <button class="sb-step" onclick="stepBattleDmg('${sb.id}',1)" aria-label="+1">+</button>
-            <button class="btn btn-outline-wax" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',-1)">Schaden</button>
-            <button class="btn btn-raised" style="padding:3px 8px;font-size:12px;" onclick="applyBattleHp('${sb.id}',1)">Heilen</button>` : '';
   if(!editing){
-    // One row like the party: name, stats, HP chips, damage controls.
-    const head = stats.filter(s=>s.v && !SB_BATTLE_HIDE.includes(s.k)).map(s=>`<span class="sb-head-item"><span class="sb-lbl">${escapeHtml(s.k)}</span> <b>${escapeHtml(s.v)}</b></span>`).join('');
+    // Fixed order: name · short stats (big) · attacks (small) · HP chips. Damage goes through the bar at the bottom.
+    const shown = stats.filter(s=>s.v && !SB_BATTLE_HIDE.includes(s.k));
+    const big = shown.filter(s=>s.k!=='#A' && s.k!=='D'), atk = shown.filter(s=>s.k==='#A' || s.k==='D');
     return `<div class="panel battle-row battle-enemy">
-    <div class="sb-head" style="padding:0;">
-      <span class="sb-name" style="font-size:16px;">${escapeHtml(sb.name||'Gegner')} <span class="small-muted">${sb.members.length>1 ? `${alive}/${sb.members.length}` : (alive ? '' : 'besiegt')}</span></span>
-      ${head}
-      ${chips ? `<span class="sb-head-item" style="gap:6px;flex-wrap:wrap;">${chips}</span>` : ''}
-      <span class="row" style="gap:4px;margin-left:auto;">${ctrls}<button class="icon-btn" onclick="toggleBattleEdit('${sb.id}')" title="Bearbeiten">⋯</button></span>
+    <div class="row" style="gap:8px;align-items:baseline;">
+      <span class="sb-name" style="font-size:16px;">${escapeHtml(sb.name||'Gegner')}</span>
+      <span class="small-muted">${sb.members.length>1 ? `${alive}/${sb.members.length}` : (alive ? '' : 'besiegt')}</span>
+      <span style="flex:1;"></span>
+      <button class="icon-btn" onclick="toggleBattleEdit('${sb.id}')" title="Bearbeiten">⋯</button>
     </div>
+    ${big.length ? `<div class="battle-stats-big">${big.map(s=>`<span><span class="sb-lbl">${escapeHtml(s.k)}</span> <b>${escapeHtml(s.v)}</b></span>`).join('')}</div>` : ''}
+    ${atk.length ? `<div class="battle-stats-atk">${atk.map(s=>`<span class="sb-lbl">${escapeHtml(s.k)}</span> ${escapeHtml(s.v)}`).join(' · ')}</div>` : ''}
+    ${chips ? `<div class="row wrap" style="gap:6px;">${chips}</div>` : ''}
     ${renderBattleSpecials(sb)}
     ${sb.desc ? `<details><summary class="small-muted" style="cursor:pointer;">Beschreibung</summary><div class="battle-desc">${escapeHtml(sb.desc)}</div></details>` : ''}
     ${xpEach && defeated ? `<span class="small-muted">XP: ${defeated} × ${xpEach} = ${defeated*xpEach}</span>` : ''}
@@ -403,5 +423,7 @@ function renderBattleTab(){
     : `<p class="small-muted" style="margin:0;">Noch keine Gegner. „Statblock einfügen" liest Statblocks im Hyperborea-Format; die HP werden nach HD ausgewürfelt.</p>`;
   // Dice below the fight: party and enemies come first.
   html += `<div class="grid-cards" style="margin-top:6px;">${renderDiceRollerPanel('battle')}</div>`;
+  const bar = renderBattleDamageBar();
+  if(bar) html += bar + `<div style="height:56px;"></div>`; // room so the bar never hides the last card
   return html;
 }
