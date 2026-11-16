@@ -476,16 +476,13 @@ function mapWaterMarkup(cur){
   if(end) out += `<circle cx="${end.x}" cy="${end.y}" r="${(6*k).toFixed(1)}" fill="${isRoad ? MAP_ROAD : MAP_WATER}" stroke="${isRoad ? '#f3e3c8' : MAP_WATER_INK}" stroke-width="${(2*k).toFixed(1)}"></circle>`;
   return out;
 }
-function waterSwatch(id, label, handler, current){
-  const on = current===id;
+function waterIconSvg(id, size){
   const icon = id==='road'
     ? `<path d="M6,24 L17,17 L28,11" fill="none" stroke="${MAP_ROAD}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>`
     : id==='river'
     ? `<path d="M6,26 Q12,18 17,21 T28,10" fill="none" stroke="${MAP_WATER_INK}" stroke-width="5" stroke-linecap="round"></path><path d="M6,26 Q12,18 17,21 T28,10" fill="none" stroke="${MAP_WATER}" stroke-width="3" stroke-linecap="round"></path>`
     : lakeBlobSvg(17, 18, 0.62);
-  return `<button title="${escapeHtml(label)}" onclick="${handler}('${id}')"
-      style="border-radius:8px;padding:2px;border:2px solid ${on?'var(--gold)':'transparent'};background:${on?'var(--panel-raised)':'transparent'};line-height:0;">
-      <svg viewBox="0 0 34 34" width="34" height="34" aria-hidden="true"><polygon points="${hexCornersPoints(17,17,16)}" fill="#e9c79c" stroke="${TERRAIN_INK}" stroke-width="1"></polygon>${icon}</svg></button>`;
+  return `<svg viewBox="0 0 34 34" width="${size||34}" height="${size||34}" aria-hidden="true"><polygon points="${hexCornersPoints(17,17,16)}" fill="#e9c79c" stroke="${TERRAIN_INK}" stroke-width="1"></polygon>${icon}</svg>`;
 }
 const OVERLAY_TERRAINS = new Set(['river','lake']);
 const MAP_MARKER_RED = '#d8322a';
@@ -613,17 +610,16 @@ function mountMapSvg(){
   });
   if(cur.grid==='none'){ X0 = 0; Y0 = 0; } // rooms-only maps keep their origin
   let W = X1-X0, H = Y1-Y0;
-  // Fixed container shape = map proportions, so zooming doesn't grow the panel.
-  const aspect = `${W} / ${H+topMargin}`;
-  if(wrap.style.aspectRatio!==aspect) wrap.style.aspectRatio = aspect;
+  // The panel has a fixed height (CSS); the drawing fills it. At 100% the map
+  // fits the panel's width, and the space above/below shows more grid. Zoomed
+  // out, even more of the map around it shows (room to tap new fields).
+  if(wrap.style.aspectRatio) wrap.style.aspectRatio = '';
   mapDom.baseW = W; mapDom.baseH = H+topMargin;
-  // Zoomed out below 100%: instead of shrinking the drawing inside the panel,
-  // show more of the map around it (grid and free space to tap new fields).
   const z = zoomView('map').z;
-  if(z<1){
+  if(z<=1 && wrap.clientWidth){
     const px = z*wrap.clientWidth/W; // screen px per map unit at this zoom
     const W2 = Math.round(W/z), H2 = Math.max(H, Math.round(wrap.clientHeight/px) - topMargin);
-    X0 -= Math.round((W2-W)/2); Y0 -= Math.round((H2-H)/2);
+    if(cur.grid!=='none'){ X0 -= Math.round((W2-W)/2); Y0 -= Math.round((H2-H)/2); } // rooms-only maps keep their origin
     W = W2; H = H2;
   }
   const setAttr = (k, v) => { v = String(v); if(svg.getAttribute(k)!==v) svg.setAttribute(k, v); };
@@ -804,7 +800,7 @@ function renderMapTab(){
   if(ui.managing){
     html += `<div class="panel" style="gap:8px;">
       <input type="text" value="${escapeHtml(cur.name)}" placeholder="Kartenname" oninput="onMapNameInput(this)">
-      <textarea rows="2" placeholder="Beschreibung der Karte…" oninput="onMapDescInput(this)">${escapeHtml(cur.description)}</textarea>
+      <textarea class="grow-text" rows="2" placeholder="Beschreibung der Karte…" oninput="onMapDescInput(this)">${escapeHtml(cur.description)}</textarea>
     </div>`;
   } else if((cur.description||'').trim()){
     html += `<details class="small-muted" style="padding:0 4px;"><summary style="cursor:pointer;">Beschreibung</summary>
@@ -890,7 +886,7 @@ function renderMapTab(){
           <button class="icon-btn" onclick="selectMapNode('${n.id}')">✕</button>
         </div>
         <input type="text" value="${escapeHtml(n.name)}" oninput="onSelectedMapNodeNameInput('${n.id}',this)" onblur="render()" placeholder="Name des Raums" style="font-weight:600;color:var(--gold);">
-        <textarea rows="3" placeholder="Beschreibung, Fallen, Inhalt…" oninput="onSelectedMapNodeDescInput('${n.id}',this)" onblur="render()">${escapeHtml(n.desc)}</textarea>
+        <textarea class="grow-text" rows="3" placeholder="Beschreibung, Fallen, Inhalt…" oninput="onSelectedMapNodeDescInput('${n.id}',this)" onblur="render()">${escapeHtml(n.desc)}</textarea>
         ${cur.grid==='hex'
           ? `<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="addConnectedRoomAuto('${n.id}')">+ Nachbarfeld</button>`
           : `<div style="display:flex;flex-direction:column;gap:4px;">
@@ -926,17 +922,20 @@ function renderTerrainPalette(current, handler, withSettlements){
     ...TERRAINS.filter(t=>!OVERLAY_TERRAINS.has(t.id) || (!withSettlements && current===t.id))];
   // Brush bar: no brush = nothing highlighted. Field dialog: no terrain = "Kein Gelände".
   let html = items.map(t=>swatch(t.id, t.label, t.id==='__clear' ? null : t.id, (withSettlements ? current : (current||'__clear'))===t.id)).join('');
-  if(withSettlements){
-    html += `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
-      + SETTLEMENTS.map(s=>swatch('set:'+s.id, s.label+' (auf Gelände setzen)', s.id, current==='set:'+s.id)).join('')
-      + waterSwatch('ov:lake', 'Lake (auf Gelände setzen)', handler, current)
-      + waterSwatch('river', 'River (Feld für Feld antippen)', handler, current)
-      + waterSwatch('road', 'Road (Feld für Feld antippen)', handler, current)
-      + `<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px;"></span>`
-      + `<button title="Löschen (Feld antippen = Feld löschen)" onclick="${handler}('__delete')"
-          style="border-radius:8px;width:38px;height:38px;font-size:18px;border:2px solid ${current==='__delete'?'var(--wax)':'transparent'};background:${current==='__delete'?'var(--panel-raised)':'transparent'};">🗑</button>`;
-  }
-  return `<div class="row wrap" style="gap:4px;">${html}</div>`;
+  if(!withSettlements) return `<div class="row wrap" style="gap:4px;">${html}</div>`;
+  // Brush bar: three labelled groups; overlays and tools get their name next to the icon.
+  const chip = (id, label, icon, on, danger) => `<button onclick="${handler}('${id}')" class="row brush-chip" style="border-color:${on ? (danger?'var(--wax)':'var(--gold)') : 'var(--border)'};background:${on?'var(--panel-raised)':'transparent'};">${icon}<span>${escapeHtml(label)}</span></button>`;
+  const onTop = SETTLEMENTS.map(st=>chip('set:'+st.id, st.label, terrainSwatchSvg(st.id, 28), current==='set:'+st.id))
+    .concat(chip('ov:lake', 'Lake', waterIconSvg('ov:lake', 28), current==='ov:lake')).join('');
+  const tools = chip('river', 'River', waterIconSvg('river', 28), current==='river')
+    + chip('road', 'Road', waterIconSvg('road', 28), current==='road')
+    + chip('__delete', 'Löschen', '<span style="font-size:18px;width:28px;text-align:center;">🗑</span>', current==='__delete', true);
+  const group = (label, inner) => `<div style="display:flex;flex-direction:column;gap:4px;"><span class="small-muted" style="font-size:11px;letter-spacing:0.05em;text-transform:uppercase;">${label}</span><div class="row wrap" style="gap:4px;">${inner}</div></div>`;
+  return `<div style="display:flex;flex-direction:column;gap:8px;">
+    ${group('Gelände', html)}
+    ${group('Auf dem Feld', onTop)}
+    ${group('Linien & Werkzeuge', tools)}
+  </div>`;
 }
 function renderSettlementChoice(current){
   const opts = [{id:'__clear', label:'Keine'}, ...SETTLEMENTS];
@@ -957,7 +956,7 @@ function renderMapNodeModal(){
       <input type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(d.num)}" oninput="ui.mapNodeDraft.num=this.value;" style="width:72px;" placeholder="Nr.">
       <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="Name des Raums" style="flex:1;">
     </div>
-    <textarea rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
+    <textarea class="grow-text" rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
     ${hexMode ? `<span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
     ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
     <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
@@ -1001,7 +1000,7 @@ function renderMapEdgeModal(){
       <button style="${d.type==='secret'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapEdgeDraftType('secret')">Geheim</button>
     </div>
     <input type="text" maxlength="40" value="${escapeHtml(d.label||'')}" oninput="ui.mapEdgeDraft.label=this.value;" placeholder="Kurztext auf der Karte (z. B. Pit Trap, Treppe ↓)">
-    <textarea rows="4" placeholder="Beschreibung: Länge, Fallen, Details…" oninput="ui.mapEdgeDraft.desc=this.value;">${escapeHtml(d.desc||'')}</textarea>
+    <textarea class="grow-text" rows="4" placeholder="Beschreibung: Länge, Fallen, Details…" oninput="ui.mapEdgeDraft.desc=this.value;">${escapeHtml(d.desc||'')}</textarea>
     <button class="row between" style="border-radius:10px;padding:10px 12px;background:${d.oneway?'var(--panel-raised)':'transparent'};border:1px solid ${d.oneway?'var(--gold)':'var(--border)'};color:var(--text);" onclick="toggleMapEdgeDraftOneway()">
       <span>Einbahn (nur ${escapeHtml(fromNode?fromNode.name:'?')} → ${escapeHtml(toNode?toNode.name:'?')})</span>${d.oneway?'<span style="color:var(--gold);">✓</span>':''}
     </button>

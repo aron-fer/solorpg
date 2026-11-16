@@ -5,11 +5,11 @@ function handleFormula(ctx){
   ctx = ctx || 'oracle';
   const formula = ctx==='battle' ? ui.formulaBattle : ui.formulaOracle;
   const parsed = parseFormula(formula);
-  if(!parsed){ pushLog(`Ungültige Eingabe: "${formula}" (Beispiel: 2W6+1)`, ctx); render(); return; }
+  if(!parsed){ pushLog(`Ungültige Eingabe: "${formula}" (Beispiel: 2W6+1)`, ctx, ctx==='battle'); render(); return; }
   const rolls = Array.from({length:parsed.count}, ()=>rollDie(parsed.sides));
   const sum = rolls.reduce((a,b)=>a+b,0)+parsed.mod;
   const modText = parsed.mod ? (parsed.mod>0?` +${parsed.mod}`:` ${parsed.mod}`) : '';
-  pushLog(`${formula}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx);
+  pushLog(`${formula}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle');
   render();
 }
 function onFormulaInput(el, ctx){ if(ctx==='battle') ui.formulaBattle = el.value; else ui.formulaOracle = el.value; }
@@ -505,7 +505,8 @@ function renderResultsPanel(spanClass, ctx){
   if(log.length===0){
     logHtml = `<p class="small-muted" style="text-align:center;padding:12px 0;">Noch nichts gewürfelt. Ergebnisse erscheinen hier, neuestes zuerst.</p>`;
   } else {
-    logHtml = `<div id="results-log-scroll-${ctx}" style="display:flex;flex-direction:column;gap:2px;max-height:256px;overflow-y:auto;">`
+    // In the battle tab the log stays short (about two entries, scrollable) so party and enemies sit higher.
+    logHtml = `<div id="results-log-scroll-${ctx}" style="display:flex;flex-direction:column;gap:2px;max-height:${ctx==='battle' ? 120 : 256}px;overflow-y:auto;">`
       + log.map((entry, idx)=>{
           const isLatest = idx === 0;
           return `<div class="log-entry ${isLatest?'latest':''}">
@@ -536,11 +537,11 @@ function handleOracleRoll(id, ctx){
   const die = dice.find(d=>d.id===id);
   if(!die) return;
   const parsed = parseFormula(die.formula);
-  if(!parsed){ pushLog(`${die.name}: ungültige Formel "${die.formula}"`, ctx); render(); return; }
+  if(!parsed){ pushLog(`${die.name}: ungültige Formel "${die.formula}"`, ctx, ctx==='battle'); render(); return; }
   const rolls = Array.from({length:parsed.count}, ()=>rollDie(parsed.sides));
   const sum = rolls.reduce((a,b)=>a+b,0) + parsed.mod;
   const modText = parsed.mod ? (parsed.mod>0?` +${parsed.mod}`:` ${parsed.mod}`) : '';
-  pushLog(`${die.name}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx);
+  pushLog(`${die.name}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle');
   render();
 }
 function renderDiceRollerPanel(ctx){
@@ -553,6 +554,7 @@ function renderDiceRollerPanel(ctx){
     <div class="grid-dice">
       ${dice.map(d=>`<button class="die-btn" onclick="handleOracleRoll('${d.id}','${ctx}')">${escapeHtml(d.name)}</button>`).join('')}
     </div>
+    ${ctx==='battle' && active.battleLog[0] ? `<div class="log-entry latest"><span class="log-time">${active.battleLog[0].time}</span><span class="log-text">${escapeHtml(active.battleLog[0].text)}</span></div>` : ''}
     <div class="row">
       <input type="text" value="${escapeHtml(formulaVal)}" placeholder="z.B. 2W6+1" oninput="onFormulaInput(this,'${ctx}')" onkeydown="onFormulaKeydown(event,'${ctx}')" style="flex:1;">
       <button class="btn btn-gold" onclick="handleFormula('${ctx}')">Würfeln</button>

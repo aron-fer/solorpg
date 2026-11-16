@@ -363,7 +363,6 @@ function renderBattleTab(){
   const inBattle = new Set(party.map(sb=>sb.charId));
   let html = `<div class="grid-cards">`;
   html += renderResultsPanel('span-all', 'battle');
-  html += renderDiceRollerPanel('battle');
   html += `</div>`;
 
   html += `<div class="row between"><span class="label">Party</span>
@@ -402,5 +401,7 @@ function renderBattleTab(){
   }
   html += enemies.length ? `<div class="battle-enemies">${enemies.map(renderEnemyBlock).join('')}</div>`
     : `<p class="small-muted" style="margin:0;">Noch keine Gegner. „Statblock einfügen" liest Statblocks im Hyperborea-Format; die HP werden nach HD ausgewürfelt.</p>`;
+  // Dice below the fight: party and enemies come first.
+  html += `<div class="grid-cards" style="margin-top:6px;">${renderDiceRollerPanel('battle')}</div>`;
   return html;
 }

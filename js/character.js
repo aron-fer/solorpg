@@ -511,9 +511,10 @@ function renderCharacterQuickView(currentChar){
   const groups = quickViewGroups(currentChar);
   const card = (it, idx, len) => {
     const q = {key:it.key, idx, len};
-    if(it.f) return `<div class="panel">${renderFieldRow(it.section, it.f, it.fIdx, false, {quick:q})}</div>`;
+    // Numbers and counters are small tiles side by side; everything else is wide.
+    if(it.f) return `<div class="panel ${it.f.type==='number'||it.f.type==='counter' ? 'quick-small' : 'quick-wide'}">${renderFieldRow(it.section, it.f, it.fIdx, false, {quick:q})}</div>`;
     const section = it.section;
-    return `<div class="panel">
+    return `<div class="panel quick-wide">
       <div class="field-label-row">
         <span style="color:var(--gold);font-weight:600;font-size:14px;">${escapeHtml(section.name)}</span>
         ${ui.managing ? `<div class="row" style="gap:2px;">${quickMoveButtons(q)}<button class="x-btn" onclick="startEditSectionName('${section.id}')">✎</button></div>` : ''}
@@ -524,7 +525,7 @@ function renderCharacterQuickView(currentChar){
     </div>`;
   };
   const tierBlock = (label, items, top) => items.length
-    ? `<p class="label" style="margin:${top}px 0 0;">${label}</p><div class="masonry-cards">${items.map((it,i)=>card(it,i,items.length)).join('')}</div>`
+    ? `<p class="label" style="margin:${top}px 0 0;">${label}</p><div class="quick-grid">${items.map((it,i)=>card(it,i,items.length)).join('')}</div>`
     : '';
   let html = tierBlock('jede Runde', groups.surface, 2) + tierBlock('pro Szene', groups.scene, 4);
   if(!groups.surface.length && !groups.scene.length){
