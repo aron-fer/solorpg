@@ -644,13 +644,10 @@ function renderRelationsTab(){
     const what = re ? `${escapeHtml(nameOf(re.from))} → ${escapeHtml(re.label)} → ${escapeHtml(nameOf(re.to))}: ` : '';
     html += `<div class="panel"><div class="row between">
       <span style="font-size:15px;">🎲 ${what}Gerollt ${rr.roll} vs ${rr.weight}</span>
-      <div class="row" style="gap:4px;flex-shrink:0;">
-        ${re ? `<button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="ui.relationRollResult=null; startEditRelationEdge('${re.id}')">✎ Bearbeiten</button>` : ''}
-        <button class="icon-btn" onclick="ui.relationRollResult=null; render();">✕</button>
-      </div>
+      <button class="icon-btn" onclick="ui.relationRollResult=null; render();">✕</button>
     </div></div>`;
   }
-  html += `<p class="small-muted">Beziehung tippen = würfeln (danach „✎ Bearbeiten“), halten = bearbeiten · Zwei Personen nacheinander tippen = verbinden, halten = bearbeiten · Zwei Finger / Strg+Mausrad = zoomen</p>`;
+  html += `<p class="small-muted">Beziehung tippen = würfeln, halten = bearbeiten · Zwei Personen nacheinander tippen = verbinden, halten = bearbeiten · Zwei Finger / Strg+Mausrad = zoomen</p>`;
   return html;
 }
 function renderRelationNodeModal(){
