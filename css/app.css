@@ -120,6 +120,8 @@ textarea { resize:none; font-family: Georgia, serif; }
 .quick-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
 .quick-grid > .quick-small { padding:10px; min-width:0; }
 .quick-grid > .quick-wide { grid-column:span 2; min-width:0; }
+.fav-btn { background:transparent; border:none; color:var(--text-faint); font-size:18px; padding:4px 2px; flex-shrink:0; line-height:1; }
+.fav-btn.on { color:var(--gold); }
 #file-import { display:none; }
 .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 /* Character statblock */

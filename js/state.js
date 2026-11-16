@@ -162,6 +162,7 @@ function ensureCampaign(data){
     id: t.id, name: t.name, mode: t.mode || 'list',
     distMode: t.distMode || 'equal', formula: t.formula || '',
     group: (t.group||'').trim(),
+    fav: !!t.fav,   // ★: shown at the top of the table list
     entries: migrateTableEntries(t.entries),
     aspects: (t.aspects||[]).map(a=>({
       id: a.id || uid(), name: a.name,

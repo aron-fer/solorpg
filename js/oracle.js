@@ -456,7 +456,11 @@ function runImport(){
         if(!activeCharacterId) activeCharacterId = newChar.id;
       }
     });
-    return {...camp, tables, karteien, tabOrder, characters, activeCharacterId};
+    // Groups that are new with this import start folded, so the list stays short.
+    const collapsedGroups = {...camp.collapsedGroups};
+    const knownGroups = new Set(camp.tables.map(t=>t.group).filter(Boolean));
+    tables.forEach(t=>{ if(t.group && !knownGroups.has(t.group)) collapsedGroups[t.group] = true; });
+    return {...camp, tables, karteien, tabOrder, characters, activeCharacterId, collapsedGroups};
   });
   ui.showImport=false; saveState(); render();
 }
@@ -622,6 +626,12 @@ function onTableQuery(el){
   if(box) box.innerHTML = renderTableListHtml();
 }
 function clearTableQuery(){ ui.tableQuery = ''; render(); }
+function toggleTableFav(id){
+  updateActive(camp=>({...camp, tables: camp.tables.map(t=>t.id===id ? {...t, fav:!t.fav} : t)}));
+  saveState();
+  const box = document.getElementById('table-list');
+  if(box) box.innerHTML = renderTableListHtml(); else render();
+}
 function renderTableListHtml(){
   const active = getActive();
   const renderTableRow = (t, idxInGroup, groupLen, noMove) => {
@@ -629,6 +639,7 @@ function renderTableListHtml(){
     return `
     <div class="row" style="gap:8px;">
       ${ui.tableSelectMode ? `<input type="checkbox" ${selected?'checked':''} onchange="toggleTableSelected('${t.id}')" style="width:20px;height:20px;flex-shrink:0;">` : ''}
+      ${ui.tableSelectMode ? '' : `<button class="fav-btn ${t.fav?'on':''}" onclick="toggleTableFav('${t.id}')" title="${t.fav?'Nicht mehr oben anzeigen':'Oben anzeigen'}" aria-label="Favorit">${t.fav?'★':'☆'}</button>`}
       <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;${selected?'border-color:var(--gold);background:var(--gold-dim);':''}" onclick="${ui.tableSelectMode?`toggleTableSelected('${t.id}')`:`handleRollTable('${t.id}')`}">
         <span>${escapeHtml(t.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${t.mode==='aspects' ? `${(t.aspects||[]).length} Aspekte` : `${t.entries.length} Einträge`}</span>
       </button>
@@ -648,11 +659,14 @@ function renderTableListHtml(){
   // While playing, helper tables stay out of the list.
   const visible = (ui.managing || ui.tableSelectMode) ? active.tables : active.tables.filter(t=>!isHelperTable(t.name));
   const hiddenCount = active.tables.length - visible.length;
-  const ungrouped = visible.filter(t=>!t.group);
-  const groupNames = active.groupOrder.filter(g=>visible.some(t=>t.group===g));
-  let html = ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
+  // Favourites (★) sit at the very top, outside their group – visible even when it is folded.
+  const favs = visible.filter(t=>t.fav);
+  const ungrouped = visible.filter(t=>!t.group && !t.fav);
+  const groupNames = active.groupOrder.filter(g=>visible.some(t=>t.group===g && !t.fav));
+  let html = favs.map((t,idx)=>renderTableRow(t, idx, favs.length, true)).join('')
+    + ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
   html += groupNames.map((g,gIdx)=>{
-    const members = visible.filter(t=>t.group===g);
+    const members = visible.filter(t=>t.group===g && !t.fav);
     const collapsed = !!active.collapsedGroups[g];
     const nSel = members.filter(t=>ui.selectedTableIds.includes(t.id)).length;
     const groupCheck = ui.tableSelectMode
