@@ -57,7 +57,7 @@ function addMapNodeAt(x, y, brush, extra){
   const s = hex && brush && brush.startsWith('set:') && SETTLEMENT_BY_ID[brush.slice(4)];
   const def = t || s;
   const area = areasOn() ? (ui.mapAreaBrush||'').trim() : '';
-  const node = {id:uid(), name: def ? def.label : (area || 'Raum '+(idx+1)), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
+  const node = {id:uid(), name: def ? def.label : (area || (cur && cur.grid==='hex' ? 'Hex ' : 'Raum ')+(idx+1)), num: String(idx+1), x:snapped.x, y:snapped.y, r:16, desc:'',
     terrain: t ? brush : null, settlement: s ? s.id : null, area, ...(extra||{})};
   updateCurrentMap(m=>({...m, nodes:[...m.nodes, node]}));
   saveState(); render();
@@ -810,7 +810,7 @@ function renderMapTab(){
   if(ui.managing){
     const connectLabel = ui.mapConnectFrom==='PENDING' ? '🔗 Ersten Raum tippen…' : (ui.mapConnectFrom ? '🔗 Zweiten Raum tippen…' : '🔗 Verbinden');
     html += `<div class="row wrap" style="gap:8px;">
-      <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="addMapNode()">+ Raum</button>
+      <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="addMapNode()">+ ${cur.grid==='hex' ? 'Hex' : 'Raum'}</button>
       ${cur.grid!=='hex' ? `<button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>` : ''}
       <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="deleteMap('${cur.id}')">🗑 Karte löschen</button>
     </div>
@@ -824,28 +824,28 @@ function renderMapTab(){
       ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" onchange="onMapGridSizeInput(this,true)" style="width:100px;">` : ''}
     </div>
     ${cur.grid==='hex' ? `<div style="display:flex;flex-direction:column;gap:4px;">
-      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — '+(ui.mapBrush==='__delete' ? 'Feld tippen = Feld löschen' : (ui.mapBrush==='river' || ui.mapBrush==='road') ? (ui.mapLineId ? 'nächstes Feld tippen = verlängern, letztes Feld nochmal = fertig' : 'erstes Feld tippen') : 'leere Stelle tippen = neues Feld, Feld tippen = anwenden'+(ui.mapBrush.startsWith('set:') || ui.mapBrush==='ov:lake' ? ' (nochmal = entfernen)' : '')) : ' (optional) — Gelände oder Siedlung wählen, dann Felder antippen'}</span>
+      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — '+(ui.mapBrush==='__delete' ? 'Hex tippen = Hex löschen' : (ui.mapBrush==='river' || ui.mapBrush==='road') ? (ui.mapLineId ? 'nächstes Hex tippen = verlängern, letztes Hex nochmal = fertig' : 'erstes Hex tippen') : 'leere Stelle tippen = neues Hex, Hex tippen = anwenden'+(ui.mapBrush.startsWith('set:') || ui.mapBrush==='ov:lake' ? ' (nochmal = entfernen)' : '')) : ' (optional) — Gelände oder Siedlung wählen, dann Hexes antippen'}</span>
       ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
     </div>` : ''}
     ${areasOn() ? `<div style="display:flex;flex-direction:column;gap:4px;">
-      <span class="small-muted">Gebiet-Pinsel (Begegnungstabelle, z.B. New Pictland) — solange ausgefüllt, bekommt jedes angetippte Feld dieses Gebiet. Leeren = aus.</span>
+      <span class="small-muted">Gebiet-Pinsel (Begegnungstabelle, z.B. New Pictland) — solange ausgefüllt, bekommt jedes angetippte Hex dieses Gebiet. Leeren = aus.</span>
       <div class="row" style="gap:6px;">
         <input type="text" list="area-table-names" value="${escapeHtml(ui.mapAreaBrush||'')}" oninput="onMapAreaBrushInput(this)" onchange="render()" placeholder="Gebiet…" style="flex:1;">
         ${ui.mapAreaBrush ? `<button class="icon-btn raised" title="Gebiet-Pinsel aus" onclick="ui.mapAreaBrush=''; render();">✕</button>` : ''}
       </div>
       ${areaDatalistHtml()}
     </div>` : ''}
-    <p class="small-muted" style="margin:0;">Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.</p>`;
+    <p class="small-muted" style="margin:0;">${cur.grid==='hex' ? 'Tippe auf eine leere Stelle in der Karte, um dort ein neues Hex anzulegen.' : `Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.`}</p>`;
     html += renderMapTablePicker(cur);
     if(ui.mapMoveArmedId){
-      html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um den Raum dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
+      html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um ${cur.grid==='hex' ? 'das Hex' : 'den Raum'} dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
     }
   }
 
   if(!ui.managing && (ui.selectedMapNodeId || ui.mapPlayConnect)){
     html += `<p class="small-muted" style="margin:0;">${ui.mapPlayConnect
       ? '🔗 Tippe den Raum, der verbunden werden soll (leere Stelle = abbrechen).'
-      : (cur.grid==='hex' ? 'Leere Stelle tippen = neues Feld.' : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.')}</p>`;
+      : (cur.grid==='hex' ? 'Leere Stelle tippen = neues Hex.' : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.')}</p>`;
   }
   html += renderTurnTracker(cur);
   html += `<div class="panel" id="map-panel" style="padding:6px;gap:6px;">
@@ -863,7 +863,7 @@ function renderMapTab(){
     </div>`;
   }
   if(cur.nodes.length===0){
-    html += `<p class="small-muted">${ui.managing ? 'Noch keine Räume — tippe oben auf „+ Raum".' : 'Noch keine Räume — tippe in die Karte, um den ersten anzulegen.'}</p>`;
+    html += `<p class="small-muted">${cur.grid==='hex' ? (ui.managing ? 'Noch keine Hexes — tippe oben auf „+ Hex".' : 'Noch keine Hexes — tippe in die Karte, um das erste anzulegen.') : (ui.managing ? 'Noch keine Räume — tippe oben auf „+ Raum".' : 'Noch keine Räume — tippe in die Karte, um den ersten anzulegen.')}</p>`;
   }
 
   if(!ui.managing && ui.selectedMapNodeId){
@@ -882,10 +882,10 @@ function renderMapTab(){
       }).join('');
       html += `<div class="panel" style="gap:8px;">
         <div class="row between" style="gap:8px;">
-          <span class="small-muted">Raum ${escapeHtml(n.num)}</span>
+          <span class="small-muted">${cur.grid==='hex' ? 'Hex' : 'Raum'} ${escapeHtml(n.num)}</span>
           <button class="icon-btn" onclick="selectMapNode('${n.id}')">✕</button>
         </div>
-        <input type="text" value="${escapeHtml(n.name)}" oninput="onSelectedMapNodeNameInput('${n.id}',this)" onblur="render()" placeholder="Name des Raums" style="font-weight:600;color:var(--gold);">
+        <input type="text" value="${escapeHtml(n.name)}" oninput="onSelectedMapNodeNameInput('${n.id}',this)" onblur="render()" placeholder="${cur.grid==='hex' ? 'Name des Hex' : 'Name des Raums'}" style="font-weight:600;color:var(--gold);">
         <textarea class="grow-text" rows="3" placeholder="Beschreibung, Fallen, Inhalt…" oninput="onSelectedMapNodeDescInput('${n.id}',this)" onblur="render()">${escapeHtml(n.desc)}</textarea>
         ${cur.grid==='hex'
           ? `<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="addConnectedRoomAuto('${n.id}')">+ Nachbarfeld</button>`
@@ -933,7 +933,7 @@ function renderTerrainPalette(current, handler, withSettlements){
   const group = (label, inner) => `<div style="display:flex;flex-direction:column;gap:4px;"><span class="small-muted" style="font-size:11px;letter-spacing:0.05em;text-transform:uppercase;">${label}</span><div class="row wrap" style="gap:4px;">${inner}</div></div>`;
   return `<div style="display:flex;flex-direction:column;gap:8px;">
     ${group('Gelände', html)}
-    ${group('Auf dem Feld', onTop)}
+    ${group('Auf dem Hex', onTop)}
     ${group('Linien & Werkzeuge', tools)}
   </div>`;
 }
@@ -950,11 +950,11 @@ function renderMapNodeModal(){
   const cur = getCurrentMap();
   const hexMode = cur && cur.grid==='hex';
   return `<div class="modal-overlay"><div class="modal-sheet">
-    <div class="row between"><span class="label" style="color:var(--gold);">Raum bearbeiten</span>
+    <div class="row between"><span class="label" style="color:var(--gold);">${hexMode ? 'Hex' : 'Raum'} bearbeiten</span>
       <button class="icon-btn" onclick="cancelMapNodeModal()">✕</button></div>
     <div class="row" style="gap:8px;">
       <input type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(d.num)}" oninput="ui.mapNodeDraft.num=this.value;" style="width:72px;" placeholder="Nr.">
-      <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="Name des Raums" style="flex:1;">
+      <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="${hexMode ? 'Name des Hex' : 'Name des Raums'}" style="flex:1;">
     </div>
     <textarea class="grow-text" rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
     ${hexMode ? `<span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
@@ -969,7 +969,7 @@ function renderMapNodeModal(){
     ${areasOn() ? `<span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
     <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Gebiet…">
     ${areaDatalistHtml()}` : ''}
-    ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jeder Raum immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
+    ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jedes Hex immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
     <div class="row between">
       <span class="small-muted">Größe</span>
       <span class="small-muted" id="mapNodeRVal">${d.r}</span>

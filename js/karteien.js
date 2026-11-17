@@ -85,6 +85,19 @@ function toggleKarteiEntryCollapse(karteiId, entryId){
   saveState(); render();
 }
 
+// Short preview under an entry. Monsters (notes with a statblock) show their
+// key numbers instead of the start of the statline: "HD 4 · AC 3 · #E 1 (3d6)".
+function karteiNotesPreview(notes){
+  if(!notes) return '';
+  const snip = t => `<div style="font-size:12px;color:var(--text-muted);white-space:pre-line;">${renderLinkedText(t.length>80 ? t.slice(0,80)+'…' : t)}</div>`;
+  const m = notes.match(SB_START);
+  if(!m || !/\bHD\s/.test(notes)) return snip(notes);
+  const at = m.index + m[1].length;
+  const desc = notes.slice(0, at).trim();
+  const p = parseEnemyStatblock(notes.slice(at));
+  const core = ['HD','AC','#E'].map(k=>{ const v = sbStatOf(p.stats, k); return v ? `<span class="sb-lbl">${k}</span> ${escapeHtml(v)}` : ''; }).filter(Boolean).join(' · ');
+  return (desc ? snip(desc) : '') + (core ? `<div style="font-size:13px;color:var(--text);">${core}</div>` : '');
+}
 function renderKarteiEntryCard(kartei, e){
   const resolvedStyle = kartei.hasCheckbox && e.resolved;
   const checkbox = kartei.hasCheckbox ? `<button class="thread-check ${e.resolved?'done':''}" onclick="toggleKarteiEntryResolved('${kartei.id}','${e.id}')">${e.resolved?'✓':''}</button>` : '';
@@ -92,7 +105,7 @@ function renderKarteiEntryCard(kartei, e){
       ${checkbox}
       <button style="flex:1;text-align:left;color:${resolvedStyle?'var(--text-faint)':'var(--text)'};font-size:14px;font-weight:600;${resolvedStyle?'text-decoration:line-through;':''}" onclick="startEditKarteiEntry('${kartei.id}','${e.id}')">${escapeHtml(e.title)}</button>
     </div>
-    ${e.notes ? `<div style="font-size:12px;color:var(--text-muted);white-space:pre-line;">${renderLinkedText(e.notes.length>80?e.notes.slice(0,80)+'…':e.notes)}</div>` : ''}`;
+    ${karteiNotesPreview(e.notes)}`;
 }
 function renderKarteiTopLevelCard(kartei, e, children, forceOpen){
   const resolvedStyle = kartei.hasCheckbox && e.resolved;
@@ -104,7 +117,7 @@ function renderKarteiTopLevelCard(kartei, e, children, forceOpen){
     : `<span style="width:16px;flex-shrink:0;"></span>`;
   let body = '';
   if(!collapsed){
-    if(e.notes) body += `<div style="font-size:12px;color:var(--text-muted);white-space:pre-line;">${renderLinkedText(e.notes.length>80?e.notes.slice(0,80)+'…':e.notes)}</div>`;
+    body += karteiNotesPreview(e.notes);
     if(children.length){
       body += `<div style="display:flex;flex-direction:column;gap:8px;padding-left:12px;border-left:2px solid var(--border);margin-top:4px;">` +
         children.map(c=>`<div id="kartei-entry-${c.id}">${renderKarteiEntryCard(kartei,c)}</div>`).join('') +
