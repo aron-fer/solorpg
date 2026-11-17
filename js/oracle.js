@@ -165,10 +165,39 @@ function rollTableFull(table, depth, visited){
   return lines.join('\n');
 }
 function rollOneEntry(table){ return rollTableFull(table, 0, new Set()); }
+// Table and combo rolls open a pop-up with the result (and still go into the
+// results list), so the page no longer jumps up to the list.
 function handleRollTable(id){
   const t = getActive().tables.find(t=>t.id===id);
-  if(t) pushLog(rollOneEntry(t));
+  if(!t) return;
+  const text = rollOneEntry(t);
+  pushLog(text, 'oracle', true);
+  ui.rollPopup = {title:t.name, text, again:`handleRollTable('${t.id}')`};
   render();
+}
+function closeRollPopup(){ ui.rollPopup = null; render(); }
+// The log line starts with "Name: …" (aspects: "Name:" and indented lines);
+// the pop-up shows the name as its heading and only the result below.
+function rollPopupBody(text, name){
+  const lines = text.split('\n');
+  if(lines[0].startsWith(name+':')) lines[0] = lines[0].slice(name.length+1).trim();
+  return lines.filter((l,i)=>i>0 || l).map(l=>l.replace(/^  /,'')).join('\n');
+}
+function renderRollPopup(){
+  const r = ui.rollPopup;
+  return `<div class="modal-overlay roll-popup-overlay" onclick="if(event.target===this) closeRollPopup()">
+    <div class="roll-popup">
+      <div class="row between" style="gap:8px;">
+        <span class="label" style="color:var(--gold);">🎲 ${escapeHtml(r.title)}</span>
+        <button class="icon-btn" onclick="closeRollPopup()" aria-label="Schließen">✕</button>
+      </div>
+      <div class="roll-popup-text">${escapeHtml(rollPopupBody(r.text, r.title))}${bestiaryButtonsFor(r.text)}</div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-raised" style="flex:1;" onclick="${r.again}">🎲 Nochmal</button>
+        <button class="btn btn-gold" style="flex:1;" onclick="closeRollPopup()">OK</button>
+      </div>
+    </div>
+  </div>`;
 }
 function startNewTable(){
   ui.editingTableId='new';
@@ -470,7 +499,9 @@ function handleRollCombo(id){
   const combo = getActive().combos.find(c=>c.id===id);
   const included = combo.tableIds.map(tid=>getActive().tables.find(t=>t.id===tid)).filter(Boolean);
   if(!included.length){ pushLog(`${combo.name}: (keine Tabellen ausgewählt — Kombi bearbeiten)`); render(); return; }
-  pushLog(`${combo.name}:\n${included.map(rollOneEntry).join('\n')}`);
+  const text = `${combo.name}:\n${included.map(rollOneEntry).join('\n')}`;
+  pushLog(text, 'oracle', true);
+  ui.rollPopup = {title:combo.name, text, again:`handleRollCombo('${combo.id}')`};
   render();
 }
 function startNewCombo(){ ui.editingComboId='new'; ui.comboDraft={name:'', tableIds:[]}; render(); }

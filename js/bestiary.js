@@ -95,6 +95,7 @@ function toggleBestiaryPanel(){
   render();
 }
 function openBestiaryPick(key, dice){
+  ui.rollPopup = null;
   ui.bestiaryOpen = true; ui.bestiaryPick = key; ui.bestiaryDice = dice || ''; ui.bestiaryCount = '';
   if(ui.activeTab!=='battle' && typeof setActiveTab==='function') setActiveTab('battle'); else render();
   setTimeout(()=>{ const el = document.getElementById('bestiary-panel'); if(el) el.scrollIntoView({block:'center', behavior:'smooth'}); }, 0);

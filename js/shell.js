@@ -343,6 +343,7 @@ function renderModals(){
   if(ui.editingCharacterId) html += renderCharacterRenameModal();
   if(ui.editingTableId) html += renderTableModal();
   if(ui.showImport) html += renderImportModal();
+  if(ui.rollPopup) html += renderRollPopup();
   if(ui.editingComboId) html += renderComboModal();
   if(ui.editingKarteiEntry) html += renderKarteiEntryModal();
   if(ui.editingKarteiId) html += renderKarteiRenameModal();
