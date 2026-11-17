@@ -1,6 +1,6 @@
 // Orakel tab: dice, random tables, combos (logic + views).
 // ---- Dice ----
-function handleQuickDie(sides){ pushLog(`W${sides}: ${rollDie(sides)}`, 'oracle'); render(); }
+function handleQuickDie(sides){ pushLog(`W${sides}: ${rollDie(sides)}`, 'oracle', false, `W${sides}`); render(); }
 function handleFormula(ctx){
   ctx = ctx || 'oracle';
   const formula = ctx==='battle' ? ui.formulaBattle : ui.formulaOracle;
@@ -9,7 +9,7 @@ function handleFormula(ctx){
   const rolls = Array.from({length:parsed.count}, ()=>rollDie(parsed.sides));
   const sum = rolls.reduce((a,b)=>a+b,0)+parsed.mod;
   const modText = parsed.mod ? (parsed.mod>0?` +${parsed.mod}`:` ${parsed.mod}`) : '';
-  pushLog(`${formula}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle');
+  pushLog(`${formula}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle', formula);
   render();
 }
 function onFormulaInput(el, ctx){ if(ctx==='battle') ui.formulaBattle = el.value; else ui.formulaOracle = el.value; }
@@ -171,9 +171,15 @@ function handleRollTable(id){
   const t = getActive().tables.find(t=>t.id===id);
   if(!t) return;
   const text = rollOneEntry(t);
-  pushLog(text, 'oracle', true);
+  pushLog(text, 'oracle', true, t.name);
   ui.rollPopup = {title:t.name, text, again:`handleRollTable('${t.id}')`};
   render();
+}
+function copyLogEntry(ctx, idx, evt){
+  if(evt && evt.target.closest('button')) return; // ⚔ buttons keep their own action
+  const log = ctx==='battle' ? getActive().battleLog : getActive().log;
+  const e = log[idx];
+  if(e) copyText(e.title ? rollPopupBody(e.text, e.title) : e.text);
 }
 function closeRollPopup(){ ui.rollPopup = null; render(); }
 // The log line starts with "Name: …" (aspects: "Name:" and indented lines);
@@ -191,7 +197,8 @@ function renderRollPopup(){
         <span class="label" style="color:var(--gold);">🎲 ${escapeHtml(r.title)}</span>
         <button class="icon-btn" onclick="closeRollPopup()" aria-label="Schließen">✕</button>
       </div>
-      <div class="roll-popup-text">${escapeHtml(rollPopupBody(r.text, r.title))}${bestiaryButtonsFor(r.text)}</div>
+      <div class="roll-popup-text" onclick="if(!event.target.closest('button')) copyText(rollPopupBody(ui.rollPopup.text, ui.rollPopup.title))" title="Antippen = kopieren">${escapeHtml(rollPopupBody(r.text, r.title))}${bestiaryButtonsFor(r.text)}</div>
+      <span class="small-muted" style="margin-top:-6px;">Ergebnis antippen = kopieren</span>
       <div class="row" style="gap:8px;">
         <button class="btn btn-raised" style="flex:1;" onclick="${r.again}">🎲 Nochmal</button>
         <button class="btn btn-gold" style="flex:1;" onclick="closeRollPopup()">OK</button>
@@ -500,7 +507,7 @@ function handleRollCombo(id){
   const included = combo.tableIds.map(tid=>getActive().tables.find(t=>t.id===tid)).filter(Boolean);
   if(!included.length){ pushLog(`${combo.name}: (keine Tabellen ausgewählt — Kombi bearbeiten)`); render(); return; }
   const text = `${combo.name}:\n${included.map(rollOneEntry).join('\n')}`;
-  pushLog(text, 'oracle', true);
+  pushLog(text, 'oracle', true, combo.name);
   ui.rollPopup = {title:combo.name, text, again:`handleRollCombo('${combo.id}')`};
   render();
 }
@@ -541,12 +548,14 @@ function renderResultsPanel(spanClass, ctx){
     logHtml = `<p class="small-muted" style="text-align:center;padding:12px 0;">Noch nichts gewürfelt. Ergebnisse erscheinen hier, neuestes zuerst.</p>`;
   } else {
     // In the battle tab the log stays short (about two entries, scrollable) so party and enemies sit higher.
-    logHtml = `<div id="results-log-scroll-${ctx}" style="display:flex;flex-direction:column;gap:2px;max-height:${ctx==='battle' ? 120 : 256}px;overflow-y:auto;">`
+    logHtml = `<div id="results-log-scroll-${ctx}" style="display:flex;flex-direction:column;gap:8px;max-height:${ctx==='battle' ? 120 : 360}px;overflow-y:auto;">`
       + log.map((entry, idx)=>{
-          const isLatest = idx === 0;
-          return `<div class="log-entry ${isLatest?'latest':''}">
-            <span class="log-time">${entry.time}</span>
-            <span class="log-text">${escapeHtml(entry.text)}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</span>
+          // Card: the rolled table as heading, the result below, time at the bottom. Tap = copy.
+          const body = entry.title ? rollPopupBody(entry.text, entry.title) : entry.text;
+          return `<div class="log-card ${idx===0?'latest':''}" onclick="copyLogEntry('${ctx}',${idx},event)" title="Antippen = kopieren">
+            ${entry.title ? `<div class="log-card-title">${escapeHtml(entry.title)}</div>` : ''}
+            <div class="log-card-body">${escapeHtml(body)}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</div>
+            <div class="log-card-time">${entry.time}</div>
           </div>`;
         }).join('')
       + `</div>`;
@@ -576,7 +585,7 @@ function handleOracleRoll(id, ctx){
   const rolls = Array.from({length:parsed.count}, ()=>rollDie(parsed.sides));
   const sum = rolls.reduce((a,b)=>a+b,0) + parsed.mod;
   const modText = parsed.mod ? (parsed.mod>0?` +${parsed.mod}`:` ${parsed.mod}`) : '';
-  pushLog(`${die.name}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle');
+  pushLog(`${die.name}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle', die.name);
   render();
 }
 function renderDiceRollerPanel(ctx){

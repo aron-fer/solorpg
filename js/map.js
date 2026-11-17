@@ -204,6 +204,7 @@ function travelAndEncounter(id){
   updateCurrentMap(m=>({...m, markerNodeId:id}));
   saveState();
   rollAreaEncounter();
+  ui.rollPopup = null; // the map shows the result itself
   const top = getActive().log[0];
   ui.mapEncounterResult = top ? top.text : null;
   render();
@@ -716,19 +717,20 @@ function shortTableLabel(name, group){
 }
 function mapRoll(kind, id){
   const active = getActive();
-  let text = null;
+  let text = null, title = null;
   if(kind==='table'){
     const t = active.tables.find(x=>x.id===id);
-    if(t) text = rollOneEntry(t);
+    if(t){ text = rollOneEntry(t); title = t.name; }
   } else {
     const c = active.combos.find(x=>x.id===id);
     if(c){
       const included = c.tableIds.map(tid=>active.tables.find(t=>t.id===tid)).filter(Boolean);
       text = included.length ? `${c.name}:\n${included.map(rollOneEntry).join('\n')}` : `${c.name}: (keine Tabellen in der Kombi)`;
+      title = c.name;
     }
   }
   if(text==null) return;
-  pushLog(text, 'oracle', true);
+  pushLog(text, 'oracle', true, title);
   ui.mapRolls = [{id:uid(), text}, ...(ui.mapRolls||[])].slice(0,3);
   render();
 }

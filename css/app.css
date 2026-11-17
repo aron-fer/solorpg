@@ -132,6 +132,15 @@ textarea { resize:none; font-family: Georgia, serif; }
 .roll-popup-overlay { align-items:center; padding:16px; }
 .roll-popup { width:100%; max-width:420px; max-height:80vh; overflow-y:auto; background:var(--panel); border:1px solid var(--gold-dim); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:12px; box-shadow:0 12px 32px rgba(0,0,0,0.6); }
 .roll-popup-text { white-space:pre-line; font-size:17px; line-height:1.5; color:var(--text); }
+.log-card { border:1px solid var(--border); border-radius:10px; overflow:hidden; cursor:copy; flex-shrink:0; }
+.log-card-title { background:#e7dcc4; color:#2a2016; font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:5px 10px; }
+.log-card-body { background:var(--panel-raised); color:var(--text-muted); font-size:15px; white-space:pre-line; padding:8px 10px 2px; overflow-wrap:break-word; }
+.log-card-time { background:var(--panel-raised); color:var(--text-faint); font-family:ui-monospace, monospace; font-size:10px; text-align:right; padding:0 10px 6px; }
+.log-card.latest { border-color:var(--gold); }
+.log-card.latest .log-card-body { color:var(--text); }
+.roll-popup-text { cursor:copy; }
+.toast { position:fixed; left:50%; bottom:110px; transform:translateX(-50%) translateY(10px); z-index:100; background:var(--gold); color:var(--bg); font-weight:600; font-size:14px; padding:8px 14px; border-radius:999px; opacity:0; pointer-events:none; transition:opacity .15s, transform .15s; }
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 #file-import { display:none; }
 .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 /* Character statblock */

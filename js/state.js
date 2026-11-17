@@ -257,10 +257,11 @@ function updateCurrentCharacter(updater){
   if(!cur) return;
   updateActive(camp => ({...camp, characters: camp.characters.map(c => c.id===cur.id ? updater(c) : c)}));
 }
-function pushLog(text, ctx, quiet){
+// `title` (optional): the table/die that was rolled; the results list shows it as the card's heading.
+function pushLog(text, ctx, quiet, title){
   ctx = ctx || 'oracle';
   const field = ctx==='battle' ? 'battleLog' : 'log';
-  updateActive(camp => ({...camp, [field]: [{id:uid(), time:timeNow(), text}, ...camp[field]].slice(0,200)}));
+  updateActive(camp => ({...camp, [field]: [{id:uid(), time:timeNow(), text, ...(title ? {title} : {})}, ...camp[field]].slice(0,200)}));
   saveState();
   if(quiet) return;   // rolled elsewhere (map table bar): don't jump to the top
   setTimeout(()=>{

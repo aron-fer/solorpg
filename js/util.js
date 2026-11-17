@@ -457,3 +457,26 @@ function gridPatternSvg(grid, W, H, s, idPrefix, x0, y0, fullH){
   // The pattern stays anchored at 0,0 (where the hexes snap), the rect may start further up/left.
   return `<defs>${tile}</defs><rect x="${x0||0}" y="${y0||0}" width="${W}" height="${fullH||H}" fill="url(#${id})" style="pointer-events:none;"></rect>`;
 }
+
+// Copies text for pasting elsewhere and shows a short "Kopiert" notice.
+function copyText(text){
+  const done = () => showToast('📋 Kopiert');
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(text).then(done, ()=>fallbackCopy(text) && done());
+  } else if(fallbackCopy(text)) done();
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try{ ok = document.execCommand('copy'); }catch(e){}
+  ta.remove();
+  return ok;
+}
+let toastTimer = null;
+function showToast(msg){
+  let el = document.getElementById('toast');
+  if(!el){ el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>el.classList.remove('show'), 1400);
+}
