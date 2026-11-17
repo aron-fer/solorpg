@@ -191,14 +191,41 @@ function patchAroundMapPanel(main, html){
 function renderNav(isSidebar){
   const active = getActive();
   const tabs = getAllTabs();
+  const karteiIds = new Set(active.karteien.map(k=>k.id));
+  const navBtn = (onclick, icon, label, isActive, isPinned) => `<button class="${isActive?'active':''}" style="${isPinned?'position:relative;':''}" onclick="${onclick}"><span class="nav-icon">${icon}</span><span class="nav-label">${label}${isPinned?' 📌':''}</span></button>`;
+  // All Karteien share one tab ("Karteien"), placed where the first Kartei sits in the tab order.
+  let karteienDone = false;
   const tabsHtml = tabs.map(t=>{
+    if(karteiIds.has(t.id)){
+      if(karteienDone) return '';
+      karteienDone = true;
+      const isPinned = active.splitView && active.pinnedTabs.some(id=>karteiIds.has(id));
+      const isActive = !active.splitView && karteiIds.has(ui.activeTab);
+      return navBtn('openKarteienTab()', '🗂️', 'Karteien', isActive, isPinned);
+    }
     const isPinned = active.splitView && active.pinnedTabs.includes(t.id);
     const isActive = !active.splitView && ui.activeTab===t.id;
-    return `<button class="${isActive?'active':''}" style="${isPinned?'position:relative;':''}" onclick="setActiveTab('${t.id}')"><span class="nav-icon">${t.icon}</span><span class="nav-label">${t.label}${isPinned?' 📌':''}</span></button>`;
+    return navBtn(`setActiveTab('${t.id}')`, t.icon, t.label, isActive, isPinned);
   }).join('')
-    + `<button onclick="addKartei()" title="Neue Kartei"><span class="nav-icon">➕</span><span class="nav-label">Kartei</span></button>`;
+    + (karteienDone ? '' : navBtn('addKartei()', '➕', 'Kartei', false, false));
   if(isSidebar){ return `<div class="brand-badge" style="margin-bottom:16px;">🎲</div>${tabsHtml}`; }
   return tabsHtml;
+}
+// The Karteien tab opens the Kartei used last (else the first one).
+function openKarteienTab(){
+  const ks = getAllTabs().filter(t=>!t.special);
+  const id = ks.some(t=>t.id===ui.lastKarteiId) ? ui.lastKarteiId : (ks[0] && ks[0].id);
+  if(id) setActiveTab(id);
+}
+// Switching Kartei via the pills; in split view the pane keeps its place.
+function selectKartei(id, fromId){
+  const active = getActive();
+  ui.lastKarteiId = id;
+  if(active.splitView && window.innerWidth>=900 && fromId && active.pinnedTabs.includes(fromId)){
+    updateActive(camp=>({...camp, pinnedTabs: camp.pinnedTabs.map(x=>x===fromId ? id : x)}));
+    saveState(); render(); return;
+  }
+  ui.activeTab = id; render();
 }
 function setActiveTab(id){
   const active = getActive();
@@ -280,7 +307,12 @@ function renderTabContent(tabId){
     case 'relations': return renderRelationsTab();
   }
   const kartei = active.karteien.find(k=>k.id===tabId);
-  if(kartei) return renderKarteiTab(kartei.id);
+  if(kartei){
+    ui.lastKarteiId = kartei.id;
+    const pills = getAllTabs().filter(t=>!t.special).map(t=>`<button class="pill ${t.id===kartei.id?'active':'inactive'}" onclick="selectKartei('${t.id}','${kartei.id}')">${t.icon} ${escapeHtml(t.label)}</button>`).join('')
+      + `<button class="pill inactive" onclick="addKartei()" title="Neue Kartei">+ Kartei</button>`;
+    return `<div class="pill-scroll">${pills}</div>` + renderKarteiTab(kartei.id);
+  }
   return '';
 }
 function renderSplitView(){

@@ -213,7 +213,7 @@ let ui = {
   editingCharacterId:null, characterNameDraft:'',
   journalEditingId:null,
   // Last chosen character view, remembered on this device.
-  tableQuery:'',
+  tableQuery:'', lastKarteiId:null,
   characterViewMode:(()=>{ try{ const v = localStorage.getItem('solorpg-character-view'); return ['full','statblock','quick'].includes(v) ? v : 'full'; }catch(e){ return 'full'; } })(),
   selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
