@@ -683,6 +683,20 @@ function onTableQuery(el){
   if(box) box.innerHTML = renderTableListHtml();
 }
 function clearTableQuery(){ ui.tableQuery = ''; render(); }
+// Combination row (also used for ★ combinations at the top of the table list).
+function renderComboRow(c){
+  return `<div class="row" style="gap:8px;">
+    <button class="fav-btn ${c.fav?'on':''}" onclick="toggleComboFav('${c.id}')" title="${c.fav?'Nicht mehr oben anzeigen':'Oben anzeigen'}" aria-label="Favorit">${c.fav?'★':'☆'}</button>
+    <button class="combo-row row between" style="flex:1;color:var(--text);text-align:left;" onclick="handleRollCombo('${c.id}')">
+      <span>🧩 ${escapeHtml(c.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${c.tableIds.length} Tabellen</span>
+    </button>
+    ${ui.managing ? `<button class="icon-btn raised" onclick="startEditCombo('${c.id}')">✎</button>` : ''}
+  </div>`;
+}
+function toggleComboFav(id){
+  updateActive(camp=>({...camp, combos: camp.combos.map(c=>c.id===id ? {...c, fav:!c.fav} : c)}));
+  saveState(); render();
+}
 function toggleTableFav(id){
   updateActive(camp=>({...camp, tables: camp.tables.map(t=>t.id===id ? {...t, fav:!t.fav} : t)}));
   saveState();
@@ -708,9 +722,10 @@ function renderTableListHtml(){
   const q = (ui.tableQuery||'').trim().toLowerCase();
   if(q){
     const hits = active.tables.filter(t=>t.name.toLowerCase().includes(q));
-    if(!hits.length) return `<p class="small-muted" style="margin:0;">Keine Tabelle gefunden.</p>`;
+    const comboHits = active.combos.filter(c=>c.name.toLowerCase().includes(q));
+    if(!hits.length && !comboHits.length) return `<p class="small-muted" style="margin:0;">Keine Tabelle gefunden.</p>`;
     const shown = hits.slice(0, 60);
-    return shown.map((t,idx)=>renderTableRow(t, idx, shown.length, true)).join('')
+    return comboHits.map(renderComboRow).join('') + shown.map((t,idx)=>renderTableRow(t, idx, shown.length, true)).join('')
       + (hits.length>shown.length ? `<p class="small-muted" style="margin:0;">… und ${hits.length-shown.length} weitere – Suche genauer eingrenzen.</p>` : '');
   }
   // While playing, helper tables stay out of the list.
@@ -721,6 +736,7 @@ function renderTableListHtml(){
   const ungrouped = visible.filter(t=>!t.group && !t.fav);
   const groupNames = active.groupOrder.filter(g=>visible.some(t=>t.group===g && !t.fav));
   let html = favs.map((t,idx)=>renderTableRow(t, idx, favs.length, true)).join('')
+    + (ui.tableSelectMode ? '' : active.combos.filter(c=>c.fav).map(renderComboRow).join(''))
     + ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
   html += groupNames.map((g,gIdx)=>{
     const members = visible.filter(t=>t.group===g && !t.fav);
@@ -730,10 +746,10 @@ function renderTableListHtml(){
       ? `<input type="checkbox" ${nSel===members.length?'checked':''} title="Alle ${members.length} Tabellen dieser Gruppe auswählen" onchange="toggleGroupSelected(${jsStr(g)})" style="width:20px;height:20px;flex-shrink:0;">`
       : '';
     const confirming = ui.confirmDeleteTableGroup===g;
-    return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">
+    return `<div class="table-group">
       <div class="row between" style="gap:8px;">
         ${groupCheck}
-        <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:6px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
+        <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:4px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
           <span class="label" style="color:var(--gold);">${collapsed?'▶':'▼'} ${escapeHtml(g)}</span>
           <span class="small-muted">${ui.tableSelectMode && nSel ? nSel+' / ' : ''}${members.length}</span>
         </button>
@@ -748,7 +764,7 @@ function renderTableListHtml(){
         <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteTableGroup(${jsStr(g)})">Gruppe löschen</button>
         <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteTableGroup()">Abbrechen</button>
       </div>` : ''}
-      ${collapsed ? '' : members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}
+      ${collapsed ? '' : `<div class="table-rows">${members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}</div>`}
     </div>`;
   }).join('');
   if(hiddenCount) html += `<p class="small-muted" style="margin:6px 0 0;">${hiddenCount} Untertabellen (z.B. „Hills: ANIMAL 1“, „Special: …“) ausgeblendet – die Suche findet sie, im Bearbeiten-Modus (⚙) erscheinen sie wieder.</p>`;
@@ -794,7 +810,7 @@ function renderDiceTab(){
       <input type="search" value="${escapeHtml(ui.tableQuery||'')}" placeholder="🔍 Tabelle suchen…" oninput="onTableQuery(this)" style="flex:1;min-width:0;">
       ${ui.tableQuery ? `<button class="icon-btn raised" title="Suche leeren" onclick="clearTableQuery()">✕</button>` : ''}
     </div>
-    <div id="table-list" style="display:flex;flex-direction:column;gap:8px;">${renderTableListHtml()}</div>`;
+    <div id="table-list">${renderTableListHtml()}</div>`;
   }
   if(ui.managing && active.tables.length>0){
     html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, <code style="color:var(--gold);">{{25%: Text}}</code> zeigt den Text mit 25 % Chance, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
@@ -809,13 +825,7 @@ function renderDiceTab(){
     html += `<div class="empty"><span>Noch keine Kombination angelegt.</span>
       <button class="btn btn-raised" onclick="startNewCombo()">+ Erste Kombi anlegen</button></div>`;
   } else {
-    html += active.combos.map(c=>`
-      <div class="row" style="gap:8px;">
-        <button class="combo-row row between" style="flex:1;border-color:var(--gold-dim);color:var(--text);text-align:left;" onclick="handleRollCombo('${c.id}')">
-          <span>${escapeHtml(c.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${c.tableIds.length} Tabellen</span>
-        </button>
-        ${ui.managing ? `<button class="icon-btn raised" onclick="startEditCombo('${c.id}')">✎</button>` : ''}
-      </div>`).join('');
+    html += `<div class="table-rows">${active.combos.map(renderComboRow).join('')}</div>`;
   }
   html += `</div>`;
   html += renderPositionPanel('oracle-position');
