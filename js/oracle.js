@@ -57,7 +57,11 @@ function resolveInlineRefs(text, depth, visited){
   for(let pass=0; pass<20 && /\{\{[^{}]+\}\}/.test(out); pass++){
     out = out.replace(re, (whole, name)=>resolveInlineRef(name, depth, visited));
   }
-  return out;
+  return tidyResolved(out);
+}
+// Chance parts that didn't happen leave nothing behind: no stray "·" separators.
+function tidyResolved(text){
+  return text.split('\n').map(l=>l.includes('·') ? l.split('·').map(p=>p.trim()).filter(Boolean).join(' · ') : l).join('\n');
 }
 function resolveInlineRef(name, depth, visited){
   if(depth>5) return '[zu tief verschachtelt]';
@@ -67,11 +71,11 @@ function resolveInlineRef(name, depth, visited){
     const roll = rollDie(100);
     return `${pct[1]}% [W100: ${roll} ${roll<=parseInt(pct[1],10) ? '✔' : '✘'}]`;
   }
-  // {{25%: 3d10×100 gp}} → the text with 25% chance, else "—". Nested {{…}}
+  // {{25%: 3d10×100 gp}} → the text with 25% chance, else nothing. Nested {{…}}
   // inside are already resolved (innermost first).
   const cond = name.trim().match(/^(\d{1,3})\s*%\s*:\s*([\s\S]*)$/);
-  if(cond) return rollDie(100) <= parseInt(cond[1],10) ? cond[2].trim() : '—';
-  // {{2d6}} → "2d6→7", {{3d10×100}} → "3d10×100→1800" (unless a table has that name)
+  if(cond) return rollDie(100) <= parseInt(cond[1],10) ? cond[2].trim() : '';
+  // {{2d6}} → "7", {{3d10×100}} → "1800" (unless a table has that name)
   if(!findTableByName(name)){
     const mm = name.trim().match(/^(.+?)\s*[×x*]\s*(\d+)$/i);
     const diceF = parseFormula(mm ? mm[1] : name.trim());
@@ -79,7 +83,7 @@ function resolveInlineRef(name, depth, visited){
       let sum = diceF.mod;
       for(let i=0;i<diceF.count;i++) sum += rollDie(diceF.sides);
       if(mm) sum *= parseInt(mm[2],10);
-      return `${name.trim()}→${sum}`;
+      return String(sum);
     }
   }
   // {{@terrain: ANIMAL}} → "<table for the current terrain>: ANIMAL".
@@ -130,7 +134,7 @@ function rollListCore(table, depth, visited){
     const subFull = rollTableFull(linked, depth+1, nextVisited);
     blockLines.push(subFull.split('\n').map(l=>'  ↳ '+l).join('\n'));
   });
-  return {text: resolvedText, blockLines, rollInfo};
+  return {text: resolvedText.trim() ? resolvedText : '(nichts)', blockLines, rollInfo};
 }
 function rollAspectsCore(table, depth, visited){
   if(!table.aspects || !table.aspects.length) return {text:'(keine Aspekte)', blockLines:[], rollInfo:''};
@@ -141,8 +145,9 @@ function rollAspectsCore(table, depth, visited){
     const {entry, rollInfo} = pickEntry(a.options, a.distMode, a.formula);
     if(!entry){ lines.push(`${a.name}: (kein Eintrag${rollInfo})`); return; }
     const resolvedText = resolveInlineRefs(entry.text, depth, nextVisited);
+    if(!resolvedText.trim() && !(entry.links||[]).length) return; // nothing found for this aspect
     const dispLines = resolvedText.split('\n');
-    lines.push(`${a.name}: ${dispLines[0]}${rollInfo}`);
+    lines.push(`${a.name}: ${dispLines[0]}`);
     dispLines.slice(1).forEach(l=>lines.push(`  ${l}`));
     (entry.links||[]).forEach(name=>{
       const linked = findTableByName(name);
@@ -152,7 +157,7 @@ function rollAspectsCore(table, depth, visited){
       lines.push(subFull.split('\n').map(l=>'    ↳ '+l).join('\n'));
     });
   });
-  return {text: lines.join('\n'), blockLines: [], rollInfo:''};
+  return {text: lines.length ? lines.join('\n') : '(nichts)', blockLines: [], rollInfo:''};
 }
 function rollTableFull(table, depth, visited){
   const core = rollTableCore(table, depth, visited);
@@ -160,7 +165,7 @@ function rollTableFull(table, depth, visited){
     return [`${table.name}:`, ...core.text.split('\n').map(l=>'  '+l)].join('\n');
   }
   const dispLines = core.text.split('\n');
-  const lines = [`${table.name}: ${dispLines[0]}${core.rollInfo||''}`];
+  const lines = [`${table.name}: ${dispLines[0]}`];
   dispLines.slice(1).forEach(l=>lines.push(`  ${l}`));
   core.blockLines.forEach(l=>lines.push(l));
   return lines.join('\n');
@@ -697,6 +702,14 @@ function toggleComboFav(id){
   updateActive(camp=>({...camp, combos: camp.combos.map(c=>c.id===id ? {...c, fav:!c.fav} : c)}));
   saveState(); render();
 }
+function setTableChip(val){
+  ui.tableChip = ui.tableChip===val ? null : val;
+  try{ localStorage.setItem('solorpg-table-chip', ui.tableChip||''); }catch(e){}
+  const box = document.getElementById('table-list');
+  if(box) box.innerHTML = renderTableListHtml(); else render();
+  const on = document.querySelector('.g-chip.on');
+  if(on) on.scrollIntoView({inline:'nearest', block:'nearest'});
+}
 function toggleTableFav(id){
   updateActive(camp=>({...camp, tables: camp.tables.map(t=>t.id===id ? {...t, fav:!t.fav} : t)}));
   saveState();
@@ -738,6 +751,17 @@ function renderTableListHtml(){
   let html = favs.map((t,idx)=>renderTableRow(t, idx, favs.length, true)).join('')
     + (ui.tableSelectMode ? '' : active.combos.filter(c=>c.fav).map(renderComboRow).join(''))
     + ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
+  // While playing, groups are chips in one row: [Alle] [Dungeon] [Triple O] …
+  // One group (or all) is shown below the favourites; edit mode keeps the foldable groups.
+  if(!ui.managing && !ui.tableSelectMode){
+    const sel = ui.tableChip==='__all' || groupNames.includes(ui.tableChip) ? ui.tableChip : null;
+    const chip = (val, label, n) => `<button class="g-chip ${sel===val?'on':''}" onclick="setTableChip(${jsStr(val)})">${escapeHtml(label)}${n!=null ? `<small>${n}</small>` : ''}</button>`;
+    const chips = groupNames.length ? `<div class="g-chips">${chip('__all','Alle')}${groupNames.map(g=>chip(g, g, visible.filter(t=>t.group===g && !t.fav).length)).join('')}</div>` : '';
+    const groupBlock = g => `<div class="g-sep">${escapeHtml(g)}</div>` + visible.filter(t=>t.group===g && !t.fav).map((t,idx,arr)=>renderTableRow(t, idx, arr.length)).join('');
+    const shown = sel==='__all' ? groupNames.map(groupBlock).join('') : sel ? groupBlock(sel) : '';
+    return chips + html + shown
+      + (hiddenCount ? `<p class="small-muted" style="margin:6px 0 0;">${hiddenCount} Untertabellen (z.B. „Hills: ANIMAL 1“, „Special: …“) ausgeblendet – die Suche findet sie, im Bearbeiten-Modus (⚙) erscheinen sie wieder.</p>` : '');
+  }
   html += groupNames.map((g,gIdx)=>{
     const members = visible.filter(t=>t.group===g && !t.fav);
     const collapsed = !!active.collapsedGroups[g];

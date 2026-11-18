@@ -700,7 +700,7 @@ function mapTableButtons(cur){
   const active = getActive(), p = mapPicks(cur);
   const out = [], seen = new Set();
   p.groups.forEach(g=>{
-    const members = active.tables.filter(t=>(t.group||'')===g);
+    const members = active.tables.filter(t=>(t.group||'')===g && !isHelperTable(t.name));
     if(!members.length) return;
     out.push({head:g || 'Ohne Gruppe'});
     members.forEach(t=>{ seen.add(t.id); out.push({kind:'table', id:t.id, label:shortTableLabel(t.name, g)}); });
@@ -760,12 +760,14 @@ function toggleMapPickerGroupOpen(g, open){
 function renderMapTablePicker(cur){
   const active = getActive(), p = mapPicks(cur);
   if(!active.tables.length) return '';
-  const groups = [...new Set(active.tables.map(t=>t.group||''))].sort((a,b)=>a.localeCompare(b));
+  // Helper tables ("Hills: ANIMAL 1", "Special: …") are never rolled directly: not offered here.
+  const pickable = active.tables.filter(t=>!isHelperTable(t.name));
+  const groups = [...new Set(pickable.map(t=>t.group||''))].sort((a,b)=>a.localeCompare(b));
   const check = (on) => on ? '☑' : '☐';
   const rowStyle = 'display:block;text-align:left;margin:2px 0;font-size:13px;text-decoration:none;color:var(--text);';
   const n = p.groups.length + p.tables.length + p.combos.length;
   const groupRows = groups.map(g=>{
-    const members = active.tables.filter(t=>(t.group||'')===g);
+    const members = pickable.filter(t=>(t.group||'')===g);
     const gOn = p.groups.includes(g);
     const singles = gOn ? '' : `<details style="margin-left:22px;" ${(ui.mapPickerGroups||[]).includes(g)?'open':''} ontoggle="toggleMapPickerGroupOpen(${jsStr(g)}, this.open)"><summary class="small-muted" style="cursor:pointer;">einzelne Tabellen</summary>
       ${members.map(t=>`<button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('tables','${t.id}')">${check(p.tables.includes(t.id))} ${escapeHtml(t.name)}</button>`).join('')}

@@ -150,6 +150,12 @@ textarea { resize:none; font-family: Georgia, serif; }
 .fold-head { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:2px 0; min-width:0; }
 .fold-head .label { white-space:nowrap; }
 .fold-extra { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.g-chips { display:flex; gap:6px; overflow-x:auto; padding:2px 0 6px; scrollbar-width:none; }
+.g-chips::-webkit-scrollbar { display:none; }
+.g-chip { flex-shrink:0; border:1px solid var(--border); border-radius:999px; padding:5px 11px; font-size:13px; color:var(--text-muted); background:transparent; white-space:nowrap; }
+.g-chip.on { background:var(--gold); color:var(--bg); border-color:var(--gold); font-weight:600; }
+.g-chip small { opacity:0.7; margin-left:4px; }
+.g-sep { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gold); margin:8px 2px 0; }
 #file-import { display:none; }
 .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 /* Character statblock */
