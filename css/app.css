@@ -141,6 +141,9 @@ textarea { resize:none; font-family: Georgia, serif; }
 .roll-popup-text { cursor:copy; }
 .toast { position:fixed; left:50%; bottom:110px; transform:translateX(-50%) translateY(10px); z-index:100; background:var(--gold); color:var(--bg); font-weight:600; font-size:14px; padding:8px 14px; border-radius:999px; opacity:0; pointer-events:none; transition:opacity .15s, transform .15s; }
 .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.fold-head { display:flex; align-items:baseline; gap:8px; width:100%; text-align:left; padding:2px 0; min-width:0; }
+.fold-head .label { white-space:nowrap; }
+.fold-extra { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #file-import { display:none; }
 .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 /* Character statblock */

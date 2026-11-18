@@ -9,7 +9,8 @@ function handleFormula(ctx){
   const rolls = Array.from({length:parsed.count}, ()=>rollDie(parsed.sides));
   const sum = rolls.reduce((a,b)=>a+b,0)+parsed.mod;
   const modText = parsed.mod ? (parsed.mod>0?` +${parsed.mod}`:` ${parsed.mod}`) : '';
-  pushLog(`${formula}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle', formula);
+  pushLog(`${formula}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, true, formula);
+  ui.lastDice[ctx] = getActive()[ctx==='battle' ? 'battleLog' : 'log'][0];
   render();
 }
 function onFormulaInput(el, ctx){ if(ctx==='battle') ui.formulaBattle = el.value; else ui.formulaOracle = el.value; }
@@ -198,7 +199,6 @@ function renderRollPopup(){
         <button class="icon-btn" onclick="closeRollPopup()" aria-label="Schließen">✕</button>
       </div>
       <div class="roll-popup-text" onclick="if(!event.target.closest('button')) copyText(rollPopupBody(ui.rollPopup.text, ui.rollPopup.title))" title="Antippen = kopieren">${escapeHtml(rollPopupBody(r.text, r.title))}${bestiaryButtonsFor(r.text)}</div>
-      <span class="small-muted" style="margin-top:-6px;">Ergebnis antippen = kopieren</span>
       <div class="row" style="gap:8px;">
         <button class="btn btn-raised" style="flex:1;" onclick="${r.again}">🎲 Nochmal</button>
         <button class="btn btn-gold" style="flex:1;" onclick="closeRollPopup()">OK</button>
@@ -539,7 +539,7 @@ function deleteCombo(id){
   ui.editingComboId=null; saveState(); render();
 }
 
-function renderResultsPanel(spanClass, ctx){
+function renderResultsPanel(spanClass, ctx, foldKey){
   ctx = ctx || 'oracle';
   const active = getActive();
   const log = ctx==='battle' ? active.battleLog : active.log;
@@ -568,8 +568,9 @@ function renderResultsPanel(spanClass, ctx){
            </div>`
         : `<button class="icon-btn" onclick="clearLogConfirm('${ctx}')" title="Verlauf leeren">↺</button>`)
     : '';
+  if(foldKey && isFolded(foldKey, true)) return `<div class="panel ${spanClass||''}">${foldHeader(foldKey, true, 'Ergebnisse', log.length ? String(log.length) : '')}</div>`;
   return `<div class="panel ${spanClass||''}">
-    <div class="row between"><span class="label">Ergebnisse</span>${clearControls}</div>
+    <div class="row between">${foldKey ? foldHeader(foldKey, true, 'Ergebnisse') : '<span class="label">Ergebnisse</span>'}${clearControls}</div>
     ${logHtml}
   </div>`;
 }
@@ -585,20 +586,34 @@ function handleOracleRoll(id, ctx){
   const rolls = Array.from({length:parsed.count}, ()=>rollDie(parsed.sides));
   const sum = rolls.reduce((a,b)=>a+b,0) + parsed.mod;
   const modText = parsed.mod ? (parsed.mod>0?` +${parsed.mod}`:` ${parsed.mod}`) : '';
-  pushLog(`${die.name}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, ctx==='battle', die.name);
+  pushLog(`${die.name}: [${rolls.join(', ')}]${modText} = ${sum}`, ctx, true, die.name);
+  ui.lastDice[ctx] = getActive()[ctx==='battle' ? 'battleLog' : 'log'][0];
   render();
 }
-function renderDiceRollerPanel(ctx){
+// Panels that can be folded; the choice is remembered on this device.
+function isFolded(key, def){ return key in ui.folds ? ui.folds[key] : !!def; }
+function toggleFold(key, def){
+  ui.folds = {...ui.folds, [key]: !isFolded(key, def)};
+  try{ localStorage.setItem('solorpg-folds', JSON.stringify(ui.folds)); }catch(e){}
+  render();
+}
+function foldHeader(key, def, label, extra){
+  const folded = isFolded(key, def);
+  return `<button class="fold-head" onclick="toggleFold('${key}',${!!def})"><span class="label">${folded?'▶':'▼'} ${label}</span>${extra ? `<span class="small-muted fold-extra">${extra}</span>` : ''}</button>`;
+}
+function renderDiceRollerPanel(ctx, foldKey){
   ctx = ctx || 'oracle';
   const active = getActive();
   const dice = ctx==='battle' ? active.battleDice : active.oracleDice;
   const formulaVal = ctx==='battle' ? ui.formulaBattle : ui.formulaOracle;
+  if(foldKey && isFolded(foldKey)) return `<div class="panel">${foldHeader(foldKey, false, 'Würfeln')}</div>`;
+  const last = ui.lastDice[ctx];
   return `<div class="panel">
-    <span class="label">Würfeln</span>
+    ${foldKey ? foldHeader(foldKey, false, 'Würfeln') : '<span class="label">Würfeln</span>'}
     <div class="grid-dice">
       ${dice.map(d=>`<button class="die-btn" onclick="handleOracleRoll('${d.id}','${ctx}')">${escapeHtml(d.name)}</button>`).join('')}
     </div>
-    ${ctx==='battle' && active.battleLog[0] ? `<div class="log-entry latest"><span class="log-time">${active.battleLog[0].time}</span><span class="log-text">${escapeHtml(active.battleLog[0].text)}</span></div>` : ''}
+    ${last ? `<div class="log-entry latest"><span class="log-time">${last.time}</span><span class="log-text">${escapeHtml(last.text)}</span></div>` : ''}
     <div class="row">
       <input type="text" value="${escapeHtml(formulaVal)}" placeholder="z.B. 2W6+1" oninput="onFormulaInput(this,'${ctx}')" onkeydown="onFormulaKeydown(event,'${ctx}')" style="flex:1;">
       <button class="btn btn-gold" onclick="handleFormula('${ctx}')">Würfeln</button>
@@ -633,7 +648,7 @@ function tablesUseTerrainRefs(active){
 }
 // Only shown when it matters: some table uses {{@terrain: …}}, or the 📍 hex
 // has an area to roll. Nothing location-dependent otherwise.
-function renderPositionPanel(){
+function renderPositionPanel(foldKey){
   const active = getActive();
   const ov = active.terrainOverride || '';
   const mapCtx = currentTerrainContext(true);
@@ -648,8 +663,10 @@ function renderPositionPanel(){
     + `<optgroup label="Gelände">${TERRAINS.map(t=>opt(t.id, t.label)).join('')}</optgroup>`
     + `<optgroup label="Siedlung">${SETTLEMENTS.map(s=>opt(s.id, s.label)+opt(s.id+':coastal', s.label+' (Coastal)')+opt(s.id+':desert', s.label+' (Desert)')).join('')}</optgroup>`;
   const areaTable = findAreaTable(mapCtx && mapCtx.node);
+  const summary = ov==='__fixed' ? 'aus' : ov ? (parseTerrainOverride(ov) ? terrainContextLabel(parseTerrainOverride(ov)) : '') : (mapCtx && mapCtx.node ? `📍 ${mapCtx.node.num}${terrainContextLabel(mapCtx) ? ' · '+terrainContextLabel(mapCtx) : ''}` : 'kein 📍');
+  if(foldKey && isFolded(foldKey, true)) return `<div class="panel">${foldHeader(foldKey, true, '🧭 Position', summary)}</div>`;
   return `<div class="panel">
-    <span class="label">🧭 Position</span>
+    ${foldKey ? foldHeader(foldKey, true, '🧭 Position', summary) : '<span class="label">🧭 Position</span>'}
     ${usesTerrain ? `<select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>` : ''}
     ${areaTable
       ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">🎲 Begegnung: ${escapeHtml(areaTable.name)}</button>`
@@ -739,10 +756,9 @@ function renderTableListHtml(){
 }
 function renderDiceTab(){
   const active = getActive();
+  // Order: dice, tables, combinations; position and results come last, folded by default.
   let html = `<div class="grid-cards">`;
-  html += renderResultsPanel('span-all', 'oracle');
-  html += renderDiceRollerPanel('oracle');
-  html += renderPositionPanel();
+  html += renderDiceRollerPanel('oracle', 'oracle-dice');
 
   html += `<div class="panel"><div class="row between"><span class="label">Tabellen</span>
     ${ui.managing ? `<div class="row" style="gap:6px;">
@@ -801,7 +817,10 @@ function renderDiceTab(){
         ${ui.managing ? `<button class="icon-btn raised" onclick="startEditCombo('${c.id}')">✎</button>` : ''}
       </div>`).join('');
   }
-  html += `</div></div>`;
+  html += `</div>`;
+  html += renderPositionPanel('oracle-position');
+  html += renderResultsPanel('span-all', 'oracle', 'oracle-results');
+  html += `</div>`;
   return html;
 }
 
