@@ -11,7 +11,7 @@
 // Conflicts: a save sends the sha it knows; if the file changed on GitHub in
 // the meantime, GitHub refuses and the app asks which version should win.
 const SYNC_KEY = 'solorpg-sync';
-const SYNC_VERSION = 3;   // shown in the options, to see which version a device runs
+const SYNC_VERSION = 4;   // shown in the options, to see which version a device runs
 const SYNC_AUTOSAVE_MS = 5*60*1000;   // at most one automatic save per 5 minutes
 const SYNC_CHECK_MS = 30*1000;        // check for a newer version at most every 30 s
 
@@ -58,7 +58,7 @@ async function ghFetch(method, path, body, accept){
   const c = syncCfg();
   // Only headers GitHub allows from web pages (CORS); a cache-busting query
   // parameter instead of a cache header for the same reason.
-  const url = `https://api.github.com/repos/${c.repo}/${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
+  const url = `https://api.github.com/repos/${c.repo}${path ? '/' + path : ''}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
   try{
     return await fetch(url, {
       method,
