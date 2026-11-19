@@ -11,6 +11,7 @@
 // Conflicts: a save sends the sha it knows; if the file changed on GitHub in
 // the meantime, GitHub refuses and the app asks which version should win.
 const SYNC_KEY = 'solorpg-sync';
+const SYNC_VERSION = 3;   // shown in the options, to see which version a device runs
 const SYNC_AUTOSAVE_MS = 5*60*1000;   // at most one automatic save per 5 minutes
 const SYNC_CHECK_MS = 30*1000;        // check for a newer version at most every 30 s
 
@@ -24,7 +25,9 @@ ui.sync = {busy:false, error:null, remote:null, listOpen:false, list:null};
 function syncPersist(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(syncStore)); }catch(e){} }
 function syncCfg(){
   const c = syncStore.cfg;
-  return {repo:(c.repo||'').trim(), branch:(c.branch||'saves').trim(), folder:(c.folder||'saves').trim().replace(/^\/+|\/+$/g,''),
+  // Also accept a pasted URL: https://github.com/owner/name(.git)
+  const repo = (c.repo||'').trim().replace(/^https?:\/\/(www\.)?github\.com\//i,'').replace(/\.git$/i,'').replace(/\/+$/,'');
+  return {repo, branch:(c.branch||'saves').trim(), folder:(c.folder||'saves').trim().replace(/^\/+|\/+$/g,''),
     token:(c.token||'').trim(), device:(c.device||'').trim() || (/Android|iPhone|iPad/i.test(navigator.userAgent) ? 'Handy' : 'PC')};
 }
 function syncConfigured(){ const c = syncCfg(); return !!(c.repo && c.token && /^[^/\s]+\/[^/\s]+$/.test(c.repo)); }
@@ -308,6 +311,14 @@ function renderSyncListModal(){
 function onSyncCfg(key, el){ syncStore.cfg = {...syncStore.cfg, [key]: el.value}; syncBranchReady = false; syncPersist(); }
 async function testSyncConnection(){
   ui.sync.testMsg = 'Prüfe…'; render();
+  // Step 1: GitHub at all, without key (a request browsers send without extra checks).
+  try{ await fetch('https://api.github.com/rate_limit?t='+Date.now()); }
+  catch(e){
+    ui.sync.testMsg = '✘ Dieser Browser erreicht api.github.com gar nicht. Häufige Ursachen: Werbe-/Tracking-Blocker (Ausnahme für diese Seite setzen), strenger Tracking-Schutz, oder die App läuft noch in der alten Version (ganz schließen und neu öffnen).';
+    render(); return;
+  }
+  if(!syncCfg().token){ ui.sync.testMsg = '✘ Kein Schlüssel eingetragen.'; render(); return; }
+  if(!/^[\x21-\x7e]+$/.test(syncCfg().token)){ ui.sync.testMsg = '✘ Der Schlüssel enthält ungültige Zeichen (Leerzeichen, Zeilenumbruch oder Sonderzeichen). Bitte neu einfügen.'; render(); return; }
   try{
     const res = await ghFetch('GET', '');
     if(!res.ok) throw ghError(res, 'Verbindung');
@@ -334,6 +345,7 @@ function renderSyncOptions(){
     <div class="row wrap" style="gap:8px;align-items:center;">
       <button class="btn btn-raised" onclick="testSyncConnection()">Verbindung testen</button>
       ${ui.sync.testMsg ? `<span class="small-muted">${escapeHtml(ui.sync.testMsg)}</span>` : ''}
+      <span class="small-muted" style="margin-left:auto;">Version ${SYNC_VERSION}</span>
     </div>
     <details><summary class="small-muted" style="cursor:pointer;">So bekommst du den Schlüssel</summary>
       <ol class="small-muted" style="margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px;">
