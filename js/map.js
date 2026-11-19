@@ -18,7 +18,9 @@ function setActiveMapId(id){
 }
 function addMap(){
   const id = uid();
-  updateActive(camp=>({...camp, maps:[...camp.maps, {id, name:'Karte '+(camp.maps.length+1), description:'', markerNodeId:null, grid:'square', gridSize:40, nodes:[], edges:[]}], activeMapId:id}));
+  const m = {id, name:'Karte '+(getActive().maps.length+1), description:'', markerNodeId:null, grid:'square', gridSize:40, nodes:[], edges:[]};
+  m.time = normMapTime(m);
+  updateActive(c=>({...c, maps:[...c.maps, m], activeMapId:id}));
   saveState(); render();
 }
 function deleteMap(id){
@@ -112,9 +114,16 @@ function setMapGridType(type){
     && !confirm(`Hex-Karten haben keine Verbindungen — die ${cur.edges.length} Verbindung(en) dieser Karte werden gelöscht. Fortfahren?`)) return;
   ui.mapConnectFrom = null; ui.mapPlayConnect = false;
   // Switching to squares: put every room into a cell. Hex: no connections.
-  updateCurrentMap(m=>({...m, grid:type, edges: type==='hex' ? [] : m.edges, nodes: type==='square'
-    ? m.nodes.map(n=>({...n, ...squareGridSnap(n.x, n.y, m.gridSize)}))
-    : m.nodes}));
+  updateCurrentMap(m=>{
+    // A map whose time was never used gets the defaults of its kind
+    // (hex: clock with step buttons, otherwise turns with torch & lantern).
+    const t = normMapTime(m);
+    const fresh = !t.on && !t.turn;
+    return {...m, grid:type, edges: type==='hex' ? [] : m.edges, nodes: type==='square'
+      ? m.nodes.map(n=>({...n, ...squareGridSnap(n.x, n.y, m.gridSize)}))
+      : m.nodes,
+      time: fresh ? normMapTime({grid:type}) : t};
+  });
   saveState(); render();
 }
 // While dragging only the map is redrawn: a full render() would replace the
@@ -765,7 +774,7 @@ function renderMapTab(){
   html += `<button class="icon-btn raised" style="border-radius:999px;" onclick="addMap()" title="Neue Karte">+</button>`;
   if(cur) html += `<span style="margin-left:auto;"></span>
     <button class="btn ${mapSideState()==='tables'?'btn-gold':'btn-raised'} map-tables-btn" style="padding:5px 10px;font-size:13px;" onclick="toggleMapSheetTables()">Tabellen</button>
-    <button class="btn ${cur.turns&&cur.turns.on?'btn-gold':'btn-raised'}" style="padding:5px 10px;font-size:13px;" onclick="toggleTurnTracker()" title="Turn-Tracker für diese Karte ein/aus">Turns</button>`;
+    <button class="btn ${normMapTime(cur).on?'btn-gold':'btn-raised'}" style="padding:5px 10px;font-size:13px;" onclick="toggleTurnTracker()" title="Zeit (Turns / Uhr) auf dieser Karte ein/aus">Zeit</button>`;
   html += `</div>`;
 
   if(!cur){
@@ -773,7 +782,7 @@ function renderMapTab(){
       <button class="btn btn-raised" onclick="addMap()">+ Erste Karte anlegen</button></div>`;
     return html;
   }
-  html += renderTurnTracker(cur);
+  html += renderTimeStrip(cur);
   const state = mapSideState();
   html += `<div class="map-layout">
     <div class="panel map-stage" id="map-panel">
@@ -891,6 +900,7 @@ function renderMapTools(cur, head){
         ${hexMode ? `<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="addMapNode()">+ Hex</button>` : ''}
       </div>
     </details>
+    ${renderTimeSettings(cur)}
     ${renderMapTablePicker(cur)}
     <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="deleteMap('${cur.id}')">Karte löschen</button>`;
   return head(title, '', 'plain') + `<div class="map-side-body">${body}</div>`;

@@ -120,7 +120,7 @@ function ensureCampaign(data){
     // Rivers and roads (hex maps): each runs through the centres of its hexes, in order.
     rivers: normMapLines(m.rivers),
     roads: normMapLines(m.roads),
-    turns: m.turns || null,   // turn tracker, normalised in turns.js
+    time: normMapTime(m),     // how time moves on this map, see turns.js
     tablePicks: normMapTablePicks(m.tablePicks),   // tables shown on this map, see map.js
   }));
   // Square-grid rooms used to snap to line crossings; they now sit in cell
@@ -130,6 +130,11 @@ function ensureCampaign(data){
     const s = m.gridSize, h = s/2;
     return {...m, cellCentered:true, nodes: m.nodes.map(n=>(n.x%s===0 && n.y%s===0) ? {...n, x:n.x+h, y:n.y+h} : n)};
   });
+  // One clock for the campaign and the things tracked on it (turns.js).
+  // The old per-map turn tracker counted effects in 10-minute turns.
+  d.clockMin = Number.isFinite(data && data.clockMin) ? Math.max(0, Math.round(data.clockMin)) : 8*60;
+  d.tracked = normTracked(data && Array.isArray(data.tracked) ? data.tracked : trackedFromOldTurns(data && data.maps));
+  d.timeUndo = Array.isArray(data && data.timeUndo) ? data.timeUndo.slice(-TIME_UNDO_MAX) : [];
   // Areas (encounter tables per hex) are optional; campaigns that already
   // use them keep them on.
   d.areasEnabled = (data && typeof data.areasEnabled==='boolean') ? data.areasEnabled : d.maps.some(m=>m.nodes.some(n=>n.area));
@@ -218,7 +223,7 @@ let ui = {
   tableChip:(()=>{ try{ return localStorage.getItem('solorpg-table-chip')||null; }catch(e){ return null; } })(), rollPopup:null, lastDice:{},
   folds:(()=>{ try{ return JSON.parse(localStorage.getItem('solorpg-folds')||'{}')||{}; }catch(e){ return {}; } })(),
   characterViewMode:(()=>{ try{ const v = localStorage.getItem('solorpg-character-view'); return ['full','statblock','quick'].includes(v) ? v : 'full'; }catch(e){ return 'full'; } })(),
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapSheet:null, mapSheetFull:false, mapSettingsOpen:false, mapPickerOpen:false, mapPickerGroups:[],
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapSheet:null, mapSheetFull:false, mapSettingsOpen:false, timePop:null, timeSettingsOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
