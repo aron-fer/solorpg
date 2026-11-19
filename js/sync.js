@@ -53,13 +53,18 @@ function syncSlug(name){
 // ---- GitHub REST calls ----
 async function ghFetch(method, path, body, accept){
   const c = syncCfg();
-  const res = await fetch(`https://api.github.com/repos/${c.repo}/${path}`, {
-    method, cache:'no-store',
-    headers: {'Authorization':'Bearer '+c.token, 'Accept': accept || 'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28',
-      ...(body ? {'Content-Type':'application/json'} : {})},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res;
+  // Only headers GitHub allows from web pages (CORS); a cache-busting query
+  // parameter instead of a cache header for the same reason.
+  const url = `https://api.github.com/repos/${c.repo}/${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
+  try{
+    return await fetch(url, {
+      method,
+      headers: {'Authorization':'Bearer '+c.token, 'Accept': accept || 'application/vnd.github+json', ...(body ? {'Content-Type':'application/json'} : {})},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }catch(e){
+    throw new Error(navigator.onLine===false ? 'Kein Internet' : `Keine Verbindung zu GitHub (${e.message||e}). Schlüssel enthält evtl. Leerzeichen oder Zeilenumbruch?`);
+  }
 }
 function ghError(res, what){
   const hint = res.status===401 ? 'Schlüssel ungültig oder abgelaufen'

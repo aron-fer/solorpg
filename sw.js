@@ -1,6 +1,6 @@
 // Network-first: when online you always get the latest files (no need to bump
 // a version after every edit); the cache is only the offline fallback.
-const CACHE_NAME = 'solorpg-v10';
+const CACHE_NAME = 'solorpg-v11';
 const ASSETS = [
   './',
   'index.html',
@@ -46,6 +46,9 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Only the app's own files: other sites (e.g. the GitHub API for saving) go
+  // straight to the network, untouched by this worker.
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' }).then((response) => {
       if (response && response.status === 200 && response.type === 'basic') {
