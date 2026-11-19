@@ -531,9 +531,9 @@ function mapEdgesMarkup(cur){
     const end = circleEdgePoint(B.x, B.y, rB, g.mx, g.my);
     return {g, e:g.edge, start, end, segLen:Math.hypot(end.x-start.x, end.y-start.y)};
   });
-  // Short text in a box on the curve's midpoint; "📝" when there is only a description.
+  // Short text in a box on the curve's midpoint; "…" when there is only a description.
   const labels = edgeGeoms.map(({g,e,start,end})=>{
-    const text = e.label || (e.desc ? '📝' : '');
+    const text = e.label || (e.desc ? '…' : '');
     if(!text) return null;
     const cx = 0.25*start.x + 0.5*g.mx + 0.25*end.x, cy = 0.25*start.y + 0.5*g.my + 0.25*end.y;
     return {cx, cy, w:labelBoxWidth(text), h:16, edgeId:e.id, text};
@@ -707,7 +707,7 @@ function mapTableButtons(cur){
   const singles = p.tables.map(id=>active.tables.find(t=>t.id===id)).filter(t=>t && !seen.has(t.id));
   if(singles.length){ if(out.length) out.push({head:'Tabellen'}); singles.forEach(t=>out.push({kind:'table', id:t.id, label:t.name})); }
   const combos = p.combos.map(id=>active.combos.find(c=>c.id===id)).filter(Boolean);
-  if(combos.length){ out.push({head:'Kombinationen'}); combos.forEach(c=>out.push({kind:'combo', id:c.id, label:'🧩 '+c.name})); }
+  if(combos.length){ out.push({head:'Kombinationen'}); combos.forEach(c=>out.push({kind:'combo', id:c.id, label:c.name})); }
   return out;
 }
 // "Dungeon: Room Contents" in group "Dungeon" → "Room Contents".
@@ -729,7 +729,7 @@ function renderMapTablePicker(cur){
   // Helper tables ("Hills: ANIMAL 1", "Special: …") are never rolled directly: not offered here.
   const pickable = active.tables.filter(t=>!isHelperTable(t.name));
   const groups = [...new Set(pickable.map(t=>t.group||''))].sort((a,b)=>a.localeCompare(b));
-  const check = (on) => on ? '☑' : '☐';
+  const check = (on) => checkBox(on);
   const rowStyle = 'display:block;text-align:left;margin:2px 0;font-size:13px;text-decoration:none;color:var(--text);';
   const n = p.groups.length + p.tables.length + p.combos.length;
   const groupRows = groups.map(g=>{
@@ -742,9 +742,9 @@ function renderMapTablePicker(cur){
     return `<div><button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('groups',${jsStr(g)})">${check(gOn)} <b style="color:var(--gold);">${escapeHtml(g||'Ohne Gruppe')}</b> <span class="small-muted">(${members.length}${picked ? `, ${picked} einzeln gewählt` : ''})</span></button>${singles}</div>`;
   }).join('');
   const comboRows = active.combos.length ? `<span class="small-muted" style="margin-top:6px;">Kombinationen</span>`
-    + active.combos.map(c=>`<button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('combos','${c.id}')">${check(p.combos.includes(c.id))} 🧩 ${escapeHtml(c.name)}</button>`).join('') : '';
+    + active.combos.map(c=>`<button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('combos','${c.id}')">${check(p.combos.includes(c.id))} ${escapeHtml(c.name)}</button>`).join('') : '';
   return `<details class="map-fold" ${ui.mapPickerOpen?'open':''} ontoggle="ui.mapPickerOpen=this.open">
-    <summary class="label" style="cursor:pointer;">🎲 Tabellen auf dieser Karte${n ? ` (${n})` : ''}</summary>
+    <summary class="label" style="cursor:pointer;">Tabellen auf dieser Karte${n ? ` (${n})` : ''}</summary>
     <span class="small-muted">Angehakte Gruppen, Tabellen und Kombinationen erscheinen beim Spielen als Knöpfe neben der Karte (am Handy unter „Tabellen“).</span>
     <div style="display:flex;flex-direction:column;gap:2px;margin-top:4px;">${groupRows}${comboRows}</div>
   </details>`;
@@ -841,7 +841,7 @@ function renderMapSide(cur, state){
   const btns = mapTableButtons(cur);
   const tables = btns.length
     ? btns.map(b=>b.head ? `<span class="label map-tables-head">${escapeHtml(b.head)}</span>`
-        : `<button class="btn btn-raised map-roll-btn" onclick="mapRoll('${b.kind}','${b.id}')">${escapeHtml(b.label.replace(/^🧩 /,''))}</button>`).join('')
+        : `<button class="btn btn-raised map-roll-btn" onclick="mapRoll('${b.kind}','${b.id}')">${escapeHtml(b.label)}</button>`).join('')
     : `<p class="small-muted" style="margin:0;">Noch keine Tabellen für diese Karte. Im Bearbeiten-Modus unter „Tabellen auf dieser Karte“ auswählen.</p>`;
   const hint = cur.nodes.length===0
     ? (hexMode ? 'Noch keine Hexes – tippe in die Karte, um das erste anzulegen.' : 'Noch keine Räume – tippe in die Karte, um den ersten anzulegen.')
@@ -921,7 +921,7 @@ function renderMapNodeForm(cur, head){
     <span class="label">Auf dem Hex</span>
     ${renderSettlementChoice(d.settlement)}
     <div class="row wrap" style="gap:6px;">
-      <button class="btn ${d.lake?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="ui.mapNodeDraft.lake=!ui.mapNodeDraft.lake; render();">${d.lake?'☑':'☐'} Lake</button>
+      <button class="btn ${d.lake?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="ui.mapNodeDraft.lake=!ui.mapNodeDraft.lake; render();">${checkBox(d.lake)} Lake</button>
       ${mapNodeOnLine(cur, 'river', id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeLinesAtNode('river','${id}')">River hier entfernen</button>` : ''}
       ${mapNodeOnLine(cur, 'road', id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeLinesAtNode('road','${id}')">Road hier entfernen</button>` : ''}
     </div>` : `
@@ -997,7 +997,7 @@ function renderTerrainPalette(current, handler, withSettlements){
     .concat(chip('ov:lake', 'Lake', waterIconSvg('ov:lake', 28), current==='ov:lake')).join('');
   const tools = chip('river', 'River', waterIconSvg('river', 28), current==='river')
     + chip('road', 'Road', waterIconSvg('road', 28), current==='road')
-    + chip('__delete', 'Löschen', '<span style="font-size:18px;width:28px;text-align:center;">🗑</span>', current==='__delete', true);
+    + chip('__delete', 'Löschen', `<span style="width:28px;display:inline-flex;justify-content:center;">${icon('trash-2',20)}</span>`, current==='__delete', true);
   const group = (label, inner) => `<div style="display:flex;flex-direction:column;gap:4px;"><span class="small-muted" style="font-size:11px;letter-spacing:0.05em;text-transform:uppercase;">${label}</span><div class="row wrap" style="gap:4px;">${inner}</div></div>`;
   return `<div style="display:flex;flex-direction:column;gap:8px;">
     ${group('Gelände', html)}
@@ -1033,7 +1033,7 @@ function renderMapEdgeModal(){
       <span>Einbahn (nur ${escapeHtml(fromNode?fromNode.name:'?')} → ${escapeHtml(toNode?toNode.name:'?')})</span>${d.oneway?'<span style="color:var(--gold);">✓</span>':''}
     </button>
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteMapEdge('${ui.editingMapEdgeId}')">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteMapEdge('${ui.editingMapEdgeId}')">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveMapEdge()">✓ Speichern</button>
     </div>
   </div></div>`;

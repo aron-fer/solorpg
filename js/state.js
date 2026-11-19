@@ -61,7 +61,7 @@ function ensureCampaign(data){
   d.battleRound = Math.max(1, parseInt(d.battleRound,10)||1);
   d.enemyTrack = d.enemyTrack==='hd' ? 'hd' : 'hp';
   d.karteien = d.karteien.map(k=>({
-    id:k.id||uid(), name:k.name||'Kartei', icon:k.icon||'📇', hasCheckbox: !!k.hasCheckbox,
+    id:k.id||uid(), name:k.name||'Kartei', hasCheckbox: !!k.hasCheckbox,
     entries: (k.entries||[]).map(e=>({id:e.id||uid(), title:e.title||'', notes:e.notes||'', resolved:!!e.resolved, parentId:e.parentId||null, collapsed:!!e.collapsed})),
   }));
   d.tabOverrides = Object.assign({}, d.tabOverrides || {});

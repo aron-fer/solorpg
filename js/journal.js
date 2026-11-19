@@ -2,7 +2,7 @@
 function renderNotesTab(){
   const active = getActive();
   let html = `<div class="row between">
-    <span class="label">📜 Text</span>
+    <span class="label">Text</span>
     <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="addJournalEntry()">+ Neuer Eintrag</button>
   </div>`;
   if(active.journal.length===0){
@@ -36,7 +36,7 @@ function renderNotesTab(){
             ${typeToggle}
             <textarea id="journal-content-textarea-${entry.id}" rows="6" placeholder="Freitext… [[Name]] verlinkt auf NSC/Ort/Thread/Eintrag" oninput="onJournalValueInput('${entry.id}',this)">${escapeHtml(entry.value)}</textarea>
             <div class="row">
-              <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="openLinkPicker('journal','${entry.id}')">🔗 Verlinken</button>
+              <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="openLinkPicker('journal','${entry.id}')">Verlinken</button>
               <button class="btn btn-raised" style="margin-left:auto;" onclick="finishEditJournalContent()">✓ Fertig</button>
             </div>
           </div>`;
@@ -56,7 +56,7 @@ function renderNotesTab(){
           <span style="color:var(--text-faint);">${entry.collapsed?'▶':'▼'}</span>
           <input type="text" value="${escapeHtml(entry.title)}" placeholder="Titel…" oninput="onJournalTitleInput('${entry.id}',this)" onclick="event.stopPropagation()" style="flex:1;background:none;border:none;font-weight:600;color:var(--gold);padding:2px 0;">
         </button>
-        <button class="x-btn" onclick="deleteJournalEntry('${entry.id}')">🗑</button>
+        <button class="x-btn" onclick="deleteJournalEntry('${entry.id}')" title="Eintrag löschen">${icon('trash-2',17)}</button>
       </div>
       ${content}
     </div>`;

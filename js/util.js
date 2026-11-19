@@ -1,11 +1,11 @@
 // Tab constants, generic helpers, SVG/graph + grid math, JSON import parsing.
 const SPECIAL_TABS = {
-  notes: {defaultLabel:'Text', defaultIcon:'📜'},
-  dice: {defaultLabel:'Orakel', defaultIcon:'🎲'},
-  character: {defaultLabel:'Charakter', defaultIcon:'🧙'},
-  map: {defaultLabel:'Karte', defaultIcon:'🗺️'},
-  relations: {defaultLabel:'Beziehungen', defaultIcon:'🕸️'},
-  battle: {defaultLabel:'Kampf', defaultIcon:'⚔️'},
+  notes: {defaultLabel:'Text'},
+  dice: {defaultLabel:'Orakel'},
+  character: {defaultLabel:'Charakter'},
+  map: {defaultLabel:'Karte'},
+  relations: {defaultLabel:'Beziehungen'},
+  battle: {defaultLabel:'Kampf'},
 };
 function getAllTabs(){
   const active = getActive();
@@ -15,11 +15,10 @@ function getAllTabs(){
     if(SPECIAL_TABS[id]){
       const ov = (active.tabOverrides||{})[id] || {};
       const label = ov.label && ov.label.trim() ? ov.label : SPECIAL_TABS[id].defaultLabel;
-      const icon = ov.icon && ov.icon.trim() ? ov.icon : SPECIAL_TABS[id].defaultIcon;
-      return {id, label, icon, special:true};
+      return {id, label, special:true};
     }
     const k = karteiMap[id];
-    if(k) return {id, label:k.name, icon:k.icon||'📇', special:false};
+    if(k) return {id, label:k.name, special:false};
     return null;
   }).filter(Boolean);
 }
@@ -282,7 +281,6 @@ function parseJSONImport(raw){
     if(looksLikeKartei){
       karteien.push({
         name: t.name || 'Unbenannt',
-        icon: (t.icon||'').trim() || '📇',
         hasCheckbox: !!t.hasCheckbox,
         // Keep the file's own id/parentId so nesting survives the import;
         // they're remapped to fresh ids in runImport.
@@ -460,7 +458,7 @@ function gridPatternSvg(grid, W, H, s, idPrefix, x0, y0, fullH){
 
 // Copies text for pasting elsewhere and shows a short "Kopiert" notice.
 function copyText(text){
-  const done = () => showToast('📋 Kopiert');
+  const done = () => showToast('Kopiert');
   if(navigator.clipboard && window.isSecureContext){
     navigator.clipboard.writeText(text).then(done, ()=>fallbackCopy(text) && done());
   } else if(fallbackCopy(text)) done();
@@ -474,6 +472,8 @@ function fallbackCopy(text){
   return ok;
 }
 let toastTimer = null;
+// Small square tick box, drawn in CSS (instead of the ☑ / ☐ characters).
+function checkBox(on){ return `<span class="cb ${on?'on':''}" aria-hidden="true"></span>`; }
 function showToast(msg){
   let el = document.getElementById('toast');
   if(!el){ el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }

@@ -94,7 +94,7 @@ function resolveInlineRef(name, depth, visited){
     const ctx = currentTerrainContext();
     const prefixes = terrainTablePrefixes(ctx);
     if(!prefixes.length && fallback) prefixes.push(fallback);
-    if(!prefixes.length) return `${cat} [Gelände unbekannt — 📍 Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
+    if(!prefixes.length) return `${cat} [Gelände unbekannt — Marker auf ein Karten-Feld mit Gelände setzen oder im Orakel ein Gelände wählen]`;
     const prefix = prefixes.find(p=>findTableByName(`${p}: ${cat}`));
     if(!prefix) return `${cat} [keine Tabelle „${prefixes[0]}: ${cat}“]`;
     const table = findTableByName(`${prefix}: ${cat}`);
@@ -182,7 +182,7 @@ function handleRollTable(id){
   render();
 }
 function copyLogEntry(ctx, idx, evt){
-  if(evt && evt.target.closest('button')) return; // ⚔ buttons keep their own action
+  if(evt && evt.target.closest('button')) return; // bestiary buttons keep their own action
   const log = ctx==='battle' ? getActive().battleLog : getActive().log;
   const e = log[idx];
   if(e) copyText(e.title ? rollPopupBody(e.text, e.title) : e.text);
@@ -200,12 +200,12 @@ function renderRollPopup(){
   return `<div class="modal-overlay roll-popup-overlay" onclick="if(event.target===this) closeRollPopup()">
     <div class="roll-popup">
       <div class="row between" style="gap:8px;">
-        <span class="label" style="color:var(--gold);">🎲 ${escapeHtml(r.title)}</span>
+        <span class="label" style="color:var(--gold);">${escapeHtml(r.title)}</span>
         <button class="icon-btn" onclick="closeRollPopup()" aria-label="Schließen">✕</button>
       </div>
       <div class="roll-popup-text" onclick="if(!event.target.closest('button')) copyText(rollPopupBody(ui.rollPopup.text, ui.rollPopup.title))" title="Antippen = kopieren">${escapeHtml(rollPopupBody(r.text, r.title))}${bestiaryButtonsFor(r.text)}</div>
       <div class="row" style="gap:8px;">
-        <button class="btn btn-raised" style="flex:1;" onclick="${r.again}">🎲 Nochmal</button>
+        <button class="btn btn-raised" style="flex:1;" onclick="${r.again}">Nochmal</button>
         <button class="btn btn-gold" style="flex:1;" onclick="closeRollPopup()">OK</button>
       </div>
     </div>
@@ -685,20 +685,20 @@ function renderPositionPanel(foldKey){
   if(!usesTerrain && !findAreaTable(mapCtx && mapCtx.node)) return '';
   const autoLabel = mapCtx && mapCtx.node
     ? `Karte: Feld ${mapCtx.node.num}${terrainContextLabel(mapCtx) ? ' · '+terrainContextLabel(mapCtx) : ' · (kein Gelände)'}`
-    : 'Karte: kein 📍 Marker gesetzt';
+    : 'Karte: kein Marker gesetzt';
   const opt = (v, label) => `<option value="${v}" ${ov===v?'selected':''}>${escapeHtml(label)}</option>`;
   const options = opt('', 'Automatisch — '+autoLabel)
     + opt('__fixed', 'Aus — feste Gelände der Tabellen (nicht ortsabhängig)')
     + `<optgroup label="Gelände">${TERRAINS.map(t=>opt(t.id, t.label)).join('')}</optgroup>`
     + `<optgroup label="Siedlung">${SETTLEMENTS.map(s=>opt(s.id, s.label)+opt(s.id+':coastal', s.label+' (Coastal)')+opt(s.id+':desert', s.label+' (Desert)')).join('')}</optgroup>`;
   const areaTable = findAreaTable(mapCtx && mapCtx.node);
-  const summary = ov==='__fixed' ? 'aus' : ov ? (parseTerrainOverride(ov) ? terrainContextLabel(parseTerrainOverride(ov)) : '') : (mapCtx && mapCtx.node ? `📍 ${mapCtx.node.num}${terrainContextLabel(mapCtx) ? ' · '+terrainContextLabel(mapCtx) : ''}` : 'kein 📍');
-  if(foldKey && isFolded(foldKey, true)) return `<div class="panel">${foldHeader(foldKey, true, '🧭 Position', summary)}</div>`;
+  const summary = ov==='__fixed' ? 'aus' : ov ? (parseTerrainOverride(ov) ? terrainContextLabel(parseTerrainOverride(ov)) : '') : (mapCtx && mapCtx.node ? `Marker ${mapCtx.node.num}${terrainContextLabel(mapCtx) ? ' · '+terrainContextLabel(mapCtx) : ''}` : 'kein Marker');
+  if(foldKey && isFolded(foldKey, true)) return `<div class="panel">${foldHeader(foldKey, true, 'Position', summary)}</div>`;
   return `<div class="panel">
-    ${foldKey ? foldHeader(foldKey, true, '🧭 Position', summary) : '<span class="label">🧭 Position</span>'}
+    ${foldKey ? foldHeader(foldKey, true, 'Position', summary) : '<span class="label">Position</span>'}
     ${usesTerrain ? `<select onchange="setTerrainOverride(this.value)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;">${options}</select>` : ''}
     ${areaTable
-      ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">🎲 Begegnung: ${escapeHtml(areaTable.name)}</button>`
+      ? `<button class="btn btn-gold" onclick="rollAreaEncounter()">Begegnung: ${escapeHtml(areaTable.name)}</button>`
       : `<p class="small-muted" style="margin:0;">Tabellen mit <code style="color:var(--gold);">{{@terrain: ANIMAL}}</code> würfeln auf der Tabelle dieses Geländes.${active.areasEnabled ? ' Gibst du dem Marker-Feld ein Gebiet (Karte → Feld bearbeiten), erscheint hier ein Begegnungs-Knopf.' : ''}</p>`}
   </div>`;
 }
@@ -717,7 +717,7 @@ function renderComboRow(c){
   return `<div class="row" style="gap:8px;">
     <button class="fav-btn ${c.fav?'on':''}" onclick="toggleComboFav('${c.id}')" title="${c.fav?'Nicht mehr oben anzeigen':'Oben anzeigen'}" aria-label="Favorit">${c.fav?'★':'☆'}</button>
     <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;" onclick="handleRollCombo('${c.id}')" title="Kombination: würfelt ${c.tableIds.length} Tabellen auf einmal">
-      <span>${escapeHtml(c.name)}</span><span class="small-muted combo-badge">🧩 ${c.tableIds.length}</span>
+      <span>${escapeHtml(c.name)}</span><span class="small-muted combo-badge">Kombi · ${c.tableIds.length}</span>
     </button>
     ${ui.managing ? `<span class="row row-tools"><button class="icon-btn raised" onclick="startEditCombo('${c.id}')">✎</button></span>` : ''}
   </div>`;
@@ -810,7 +810,7 @@ function renderTableListHtml(){
         ${ui.managing && !ui.tableSelectMode ? `<div class="row row-tools" style="gap:4px;">
           <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup(${jsStr(g)},-1)">↑</button>
           <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup(${jsStr(g)},1)">↓</button>
-          <button class="icon-btn raised" style="color:var(--wax);" title="Ganze Gruppe löschen" onclick="askDeleteTableGroup(${jsStr(g)})">🗑</button>
+          <button class="icon-btn raised" style="color:var(--wax);" title="Ganze Gruppe löschen" onclick="askDeleteTableGroup(${jsStr(g)})">${icon('trash-2',17)}</button>
         </div>` : ''}
       </div>
       ${confirming ? `<div class="row wrap" style="gap:6px;padding:4px 0 6px;">
@@ -828,7 +828,7 @@ function renderTablesHead(cls){
   const active = getActive();
   return `<div class="row between ${cls||''}"><span class="label">Tabellen</span>
     ${ui.managing ? `<div class="row" style="gap:6px;">
-      <button class="btn ${ui.tableSelectMode?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleTableSelectMode()">${ui.tableSelectMode?'✕ Auswahl beenden':'☑ Auswählen'}</button>
+      <button class="btn ${ui.tableSelectMode?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleTableSelectMode()">${ui.tableSelectMode?'✕ Auswahl beenden':'Auswählen'}</button>
       <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="startImport()">Import</button>
       ${active.tables.length ? `<button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="startNewCombo()" title="Neue Kombination: würfelt mehrere Tabellen auf einmal">+ Kombi</button>` : ''}
       <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="startNewTable()">+ Neu</button>
@@ -858,12 +858,12 @@ function renderTablesBlock(withoutHead){
           ${ui.confirmBulkDeleteTables ? `
             <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteSelectedTables()">Wirklich löschen (${ui.selectedTableIds.length})</button>
             <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteSelectedTables()">Abbrechen</button>
-          ` : `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="confirmDeleteSelectedTables()">🗑 Ausgewählte löschen</button>`}
+          ` : `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="confirmDeleteSelectedTables()">Ausgewählte löschen</button>`}
         </div>
       </div>`;
     }
     html += `<div class="row table-search" style="gap:6px;margin:2px 0 4px;">
-      <input type="search" value="${escapeHtml(ui.tableQuery||'')}" placeholder="🔍 Tabelle suchen…" oninput="onTableQuery(this)" style="flex:1;min-width:0;">
+      <input type="search" value="${escapeHtml(ui.tableQuery||'')}" placeholder="Tabelle suchen…" oninput="onTableQuery(this)" style="flex:1;min-width:0;">
       ${ui.tableQuery ? `<button class="icon-btn raised" title="Suche leeren" onclick="clearTableQuery()">✕</button>` : ''}
     </div>
     <div id="table-list">${renderTableListHtml()}</div>`;
@@ -916,7 +916,7 @@ function renderImportModal(){
     <div class="row between"><span class="label" style="color:var(--gold);">Tabellen, Karteien &amp; Charaktere importieren (JSON)</span>
       <button class="icon-btn" onclick="cancelImport()">✕</button></div>
     <p class="small-muted">Ein JSON-Array von Tabellen, Karteien und/oder Charakteren einfügen oder als Datei(en) auswählen — landen in der aktuellen Kampagne. Gibt es bereits eine Tabelle/Kartei/Charakter mit demselben Namen, werden Tabellen ersetzt, Karteien um neue Einträge ergänzt, bei Charakteren neue Bereiche hinzugefügt und gleichnamige Bereiche ersetzt. <code style="color:var(--gold);">{{Tabellenname}}</code> im Text setzt inline einen Wurf aus einer anderen Tabelle ein, <code style="color:var(--gold);">"links"</code> hängt einen kompletten Zusatz-Wurf an. Eine Kartei erkennt der Import an Einträgen mit <code style="color:var(--gold);">"title"</code>/<code style="color:var(--gold);">"notes"</code>, ein Charakter an <code style="color:var(--gold);">"sections"</code> mit <code style="color:var(--gold);">"fields"</code> (Typen: number, counter, text, list, status, table, slots; optional <code style="color:var(--gold);">"tier"</code>: surface / scene / rare für die Kurzansicht).</p>
-    <button class="btn btn-raised" onclick="triggerTableImport()">📁 Datei(en) auswählen (.json)</button>
+    <button class="btn btn-raised" onclick="triggerTableImport()">Datei(en) auswählen (.json)</button>
     <textarea rows="16" placeholder='[
   {
     "name": "Zufallsbegegnung",
@@ -1026,7 +1026,7 @@ function renderTableModal(){
     ${modeToggle}
     ${body}
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteTable('${ui.editingTableId}')">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteTable('${ui.editingTableId}')">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveTable()">✓ Speichern</button>
     </div>
   </div></div>`;
@@ -1051,7 +1051,7 @@ function renderComboModal(){
       }).join('')}
     </div>
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteCombo('${ui.editingComboId}')">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteCombo('${ui.editingComboId}')">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveCombo()">✓ Speichern</button>
     </div>
   </div></div>`;

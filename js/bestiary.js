@@ -2,7 +2,7 @@
 // ("Name: #E 1d6 | … | HD 1+2 | …") counts as a monster. The text before the
 // statblock (and the parent entry's text, for variants) is its description.
 // Monsters can be put into the Kampf tab by search, or straight from a
-// rolled table result that names them ("2d6 ape-men" → ⚔ Ape-Man).
+// rolled table result that names them ("2d6 ape-men" → button Ape-Man).
 
 const bestiaryCache = new WeakMap();
 const SB_START = /(^|\n)[^\n]*?:?\s*#E\s/;   // colon is missing in a few book entries
@@ -92,7 +92,7 @@ function bestiaryMatches(text){
 }
 function bestiaryButtonsFor(text){
   return bestiaryMatches(text).map(({item, dice})=>
-    `<button class="bestiary-btn" onclick="openBestiaryPick(${jsStr(item.key)}, ${jsStr(dice)})" title="In den Kampf">⚔ ${escapeHtml(item.name)}</button>`).join('');
+    `<button class="bestiary-btn" onclick="openBestiaryPick(${jsStr(item.key)}, ${jsStr(dice)})" title="In den Kampf">${icon('swords',14)} ${escapeHtml(item.name)}</button>`).join('');
 }
 
 // ---- Kampf tab picker ----

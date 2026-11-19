@@ -373,7 +373,7 @@ function renderFieldControl(sectionId, f){
 // opts.inBlock: field inside a whole-section block there — only ✎.
 function renderFieldRow(section, f, fIdx, showTierBadge, opts){
   opts = opts || {};
-  const tierBadge = showTierBadge ? {surface:'⏱ jede Runde', scene:'◷ pro Szene', rare:'· selten'}[f.tier||'rare'] : '';
+  const tierBadge = showTierBadge ? {surface:'jede Runde', scene:'pro Szene', rare:'selten'}[f.tier||'rare'] : '';
   let controls = '';
   if(ui.managing){
     const edit = `<button class="x-btn" onclick="startEditField('${section.id}','${f.id}')">✎</button>`;
@@ -419,7 +419,7 @@ function renderCharacterTab(){
     html += `<div class="row wrap" style="gap:8px;">
       <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="startRenameCharacter('${currentChar.id}')">✎ Umbenennen</button>
       <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="duplicateCharacter('${currentChar.id}')">⧉ Duplizieren</button>
-      <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="deleteCharacter('${currentChar.id}')">🗑 Löschen</button>
+      <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="deleteCharacter('${currentChar.id}')">Löschen</button>
       <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="startNewSection()">+ Neuer Bereich</button>
     </div>`;
   }
@@ -458,7 +458,7 @@ function renderCharacterTab(){
         <button class="row" style="flex:1;text-align:left;" onclick="toggleSectionCollapse('${section.id}')">
           <span style="color:var(--text-faint);">${section.collapsed?'▶':'▼'}</span>
           <span style="color:var(--gold);font-weight:600;font-size:14px;">${escapeHtml(section.name)}</span>
-          ${section.quick ? `<span class="small-muted" title="Ganzer Bereich in der Kurzansicht">${section.quick==='surface' ? '⏱ Kurzansicht' : '◷ Kurzansicht'}</span>` : ''}
+          ${section.quick ? `<span class="small-muted" title="Ganzer Bereich in der Kurzansicht">Kurzansicht</span>` : ''}
         </button>
         ${ui.managing ? `<div class="row" style="gap:4px;">
           <button class="icon-btn" style="${sIdx===0?'opacity:0.3;':''}" ${sIdx===0?'disabled':''} onclick="moveSection('${section.id}',-1)">↑</button>
@@ -529,7 +529,7 @@ function renderCharacterQuickView(currentChar){
     : '';
   let html = tierBlock('jede Runde', groups.surface, 2) + tierBlock('pro Szene', groups.scene, 4);
   if(!groups.surface.length && !groups.scene.length){
-    html += `<div class="panel empty"><span class="small-muted">Noch nichts für die Kurzansicht markiert. Über das Zahnrad (⚙) in der Vollansicht kannst du ein Feld als „Jede Runde" oder „Pro Szene" einstellen — oder mit ✎ am Bereich gleich einen ganzen Bereich (z.B. Saving Throws).</span></div>`;
+    html += `<div class="panel empty"><span class="small-muted">Noch nichts für die Kurzansicht markiert. Über die Einstellungen eines Feldes in der Vollansicht kannst du ein Feld als „Jede Runde" oder „Pro Szene" einstellen — oder mit ✎ am Bereich gleich einen ganzen Bereich (z.B. Saving Throws).</span></div>`;
   } else if(ui.managing){
     html += `<p class="small-muted" style="margin:0;">Mit ↑↓ sortieren — die Reihenfolge läuft spaltenweise von oben nach unten.</p>`;
   }
@@ -562,7 +562,7 @@ function renderSectionModal(){
     </div>
     ${ui.sectionDraft.sb ? `<input type="text" value="${escapeHtml(ui.sectionDraft.sbAbbr||'')}" placeholder="Kürzel im Statblock, z.B. Saves (leer = ${escapeHtml(sbDefaultAbbr(ui.sectionDraft.name))})" oninput="onSectionDraftSbAbbr(this)">` : ''}
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteSection('${ui.editingSectionId}')">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteSection('${ui.editingSectionId}')">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveSection()">✓ Speichern</button>
     </div>
   </div></div>`;
@@ -594,7 +594,7 @@ function renderFieldModal(){
       <div class="row wrap" style="gap:6px;">${ui.fieldDraft.columns.map((c,ci)=>{ const on = !ui.fieldDraft.sbCols || ui.fieldDraft.sbCols.includes(ci);
         return `<button class="btn ${on?'btn-gold':'btn-raised'}" style="padding:4px 10px;font-size:12px;" onclick="toggleFieldDraftSbCol(${ci})">${escapeHtml(c||('Spalte '+(ci+1)))}</button>`; }).join('')}</div>` : ''}
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteField()">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteField()">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveField()">✓ Speichern</button>
     </div>
   </div></div>`;

@@ -544,7 +544,7 @@ function renderRelationsTab(){
                <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteRelationMap('${cur.id}')">Wirklich löschen</button>
                <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="ui.confirmDeleteRelationMapId=null; render();">Abbrechen</button>
              </span>`
-          : `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="askDeleteRelationMap('${cur.id}')">🗑 Netz löschen</button>`}
+          : `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="askDeleteRelationMap('${cur.id}')">Netz löschen</button>`}
       </div>
     </div>`;
   }
@@ -642,7 +642,7 @@ function renderRelationsTab(){
     const nameOf = (id) => { const n = cur.nodes.find(x=>x.id===id); return n ? n.name : '?'; };
     const what = re ? `${escapeHtml(nameOf(re.from))} → ${escapeHtml(re.label)} → ${escapeHtml(nameOf(re.to))}: ` : '';
     html += `<div class="panel"><div class="row between">
-      <span style="font-size:15px;">🎲 ${what}Gerollt ${rr.roll} vs ${rr.weight}</span>
+      <span style="font-size:15px;">${what}Gerollt ${rr.roll} vs ${rr.weight}</span>
       <button class="icon-btn" onclick="ui.relationRollResult=null; render();">✕</button>
     </div></div>`;
   }
@@ -656,7 +656,7 @@ function renderRelationNodeModal(){
       <button class="icon-btn" onclick="cancelRelationNodeModal()">✕</button></div>
     <input type="text" value="${escapeHtml(d.name)}" placeholder="Name der Person/Fraktion" oninput="ui.relationNodeDraft.name=this.value;">
     <div class="row">
-      <button class="btn btn-outline-wax" onclick="deleteRelationNode('${id}')">🗑 Löschen</button>
+      <button class="btn btn-outline-wax" onclick="deleteRelationNode('${id}')">Löschen</button>
       <button class="btn btn-gold" style="flex:1;" onclick="saveRelationNode()">✓ Speichern</button>
     </div>
   </div></div>`;
@@ -679,7 +679,7 @@ function renderRelationEdgeModal(){
     </div>
     <input type="range" min="1" max="20" value="${d.weight}" oninput="ui.relationEdgeDraft.weight=this.value; document.getElementById('relEdgeWVal').textContent=this.value;">
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteRelationEdge('${ui.editingRelationEdgeId}')">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteRelationEdge('${ui.editingRelationEdgeId}')">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveRelationEdge()">✓ Speichern</button>
     </div>
   </div></div>`;

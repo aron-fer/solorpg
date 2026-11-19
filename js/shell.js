@@ -3,10 +3,6 @@ function onSpecialTabLabel(id, el){
   updateActive(camp=>({...camp, tabOverrides: {...camp.tabOverrides, [id]: {...(camp.tabOverrides[id]||{}), label: el.value}}}));
   saveState();
 }
-function onSpecialTabIcon(id, el){
-  updateActive(camp=>({...camp, tabOverrides: {...camp.tabOverrides, [id]: {...(camp.tabOverrides[id]||{}), icon: el.value}}}));
-  saveState();
-}
 function moveTab(id, dir){
   updateActive(camp=>{
     const order = [...camp.tabOrder];
@@ -228,7 +224,7 @@ function renderNav(isSidebar){
   const desk = isDesk();
   const shown = desk ? deskPanes() : null;
   const isOn = id => desk ? (id==='dice' ? deskDockOpen() : shown.includes(id)) : ui.activeTab===id;
-  const navBtn = (onclick, icon, label, isActive, isPinned) => `<button class="${isActive?'active':''}" style="${isPinned?'position:relative;':''}" onclick="${onclick}"><span class="nav-icon">${icon}</span><span class="nav-label">${label}${isPinned?' 📌':''}</span></button>`;
+  const navBtn = (onclick, iconHtml, label, isActive) => `<button class="${isActive?'active':''}" onclick="${onclick}" title="${escapeHtml(label)}"><span class="nav-icon">${iconHtml}</span><span class="nav-label">${escapeHtml(label)}</span></button>`;
   // All Karteien share one tab ("Karteien"), placed where the first Kartei sits in the tab order.
   let karteienDone = false;
   const tabsHtml = tabs.map(t=>{
@@ -236,12 +232,12 @@ function renderNav(isSidebar){
       if(karteienDone) return '';
       karteienDone = true;
       const isActive = desk ? shown.some(id=>karteiIds.has(id)) : karteiIds.has(ui.activeTab);
-      return navBtn('openKarteienTab()', '🗂️', 'Karteien', isActive, false);
+      return navBtn('openKarteienTab()', icon(TAB_ICONS.karteien, 22), 'Karteien', isActive, false);
     }
-    return navBtn(`setActiveTab('${t.id}')`, t.icon, t.label, isOn(t.id), false);
+    return navBtn(`setActiveTab('${t.id}')`, icon(TAB_ICONS[t.id] || 'library', 22), t.label, isOn(t.id), false);
   }).join('')
-    + (karteienDone ? '' : navBtn('addKartei()', '➕', 'Kartei', false, false));
-  if(isSidebar){ return `<div class="brand-badge" style="margin-bottom:16px;">🎲</div>${tabsHtml}`; }
+    + (karteienDone ? '' : navBtn('addKartei()', icon('plus', 22), 'Kartei', false, false));
+  if(isSidebar){ return `<div class="brand-badge" style="margin-bottom:16px;">${icon('dices',18)}</div>${tabsHtml}`; }
   return tabsHtml;
 }
 // The Karteien tab opens the Kartei used last (else the first one).
@@ -327,7 +323,7 @@ function renderDesk(){
   const panes = deskSync();
   const opts = deskPaneOptions();
   const paneHtml = panes.map((id,i)=>{
-    const select = `<select class="pane-select" onchange="deskSetPane(${i}, this.value)">${opts.map(t=>`<option value="${t.id}" ${t.id===id?'selected':''}>${t.icon} ${escapeHtml(t.label)}</option>`).join('')}</select>`;
+    const select = `<select class="pane-select" onchange="deskSetPane(${i}, this.value)">${opts.map(t=>`<option value="${t.id}" ${t.id===id?'selected':''}>${escapeHtml(t.label)}</option>`).join('')}</select>`;
     return `<div class="desk-col desk-pane ${panes.length>1 && ui.deskFocus===i ? 'focus' : ''}" onpointerdown="deskFocusPane(${i})">
       <div class="desk-hd">${select}
         ${panes.length>1 ? `<button class="icon-btn" style="margin-left:auto;padding:2px 6px;" onclick="deskClosePane(${i})" title="Bereich schließen">✕</button>` : ''}</div>
@@ -354,7 +350,7 @@ function renderHeader(){
   return `
   <div class="header">
     <div class="brand">
-      <div class="brand-badge">🎲</div>
+      <div class="brand-badge">${icon('dices',18)}</div>
       <div>
         <h1>Solo RPG</h1>
         <button class="campaign-switch-btn" onclick="openCampaignSwitcher()">${escapeHtml(camp?camp.name:'Kampagne')} ▾</button>
@@ -368,11 +364,11 @@ function renderHeader(){
         <button class="icon-btn ${ui.headerMenuOpen?'active':''}" onclick="toggleHeaderMenu()" title="Menü" aria-label="Menü">⋯</button>
         ${ui.headerMenuOpen ? `<div class="menu-backdrop" onclick="toggleHeaderMenu()"></div>
         <div class="header-menu">
-          ${syncConfigured() ? `<button onclick="toggleHeaderMenu(); syncSave()">☁ Auf GitHub speichern</button>
-          <button onclick="toggleHeaderMenu(); openSyncList()">☁ Aus GitHub laden…</button>` : `<button onclick="toggleHeaderMenu(); openOptions()">☁ Speichern auf GitHub einrichten…</button>`}
-          <button onclick="toggleHeaderMenu(); openOptions()">🛠 Optionen</button>
-          <button onclick="toggleHeaderMenu(); exportData()">⬇ Kampagne exportieren</button>
-          <button onclick="toggleHeaderMenu(); triggerImport()">⬆ Kampagne importieren</button>
+          ${syncConfigured() ? `<button onclick="toggleHeaderMenu(); syncSave()">Auf GitHub speichern</button>
+          <button onclick="toggleHeaderMenu(); openSyncList()">Aus GitHub laden…</button>` : `<button onclick="toggleHeaderMenu(); openOptions()">Speichern auf GitHub einrichten…</button>`}
+          <button onclick="toggleHeaderMenu(); openOptions()">Optionen</button>
+          <button onclick="toggleHeaderMenu(); exportData()">Kampagne exportieren</button>
+          <button onclick="toggleHeaderMenu(); triggerImport()">Kampagne importieren</button>
         </div>` : ''}
       </div>
     </div>
@@ -381,9 +377,9 @@ function renderHeader(){
   ${ui.managing && showGear ? `<div class="edit-banner"><span>✎ Bearbeiten-Modus</span><button class="btn btn-gold" onclick="toggleManaging()">✓ Fertig</button></div>` : ''}
   ${saveError ? `<div class="panel" style="border-color:var(--wax);background:rgba(139,46,46,0.18);">
     <div class="row between wrap" style="gap:8px;">
-      <span style="font-size:14px;">⚠️ ${escapeHtml(saveError)}</span>
+      <span style="font-size:14px;">${escapeHtml(saveError)}</span>
       <div class="row" style="gap:6px;">
-        <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="exportData()">⬇ Exportieren</button>
+        <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="exportData()">Exportieren</button>
         <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="flushSave()">↻ Erneut</button>
       </div>
     </div>
@@ -406,7 +402,7 @@ function renderTabContent(tabId){
   const kartei = active.karteien.find(k=>k.id===tabId);
   if(kartei){
     ui.lastKarteiId = kartei.id;
-    const pills = getAllTabs().filter(t=>!t.special).map(t=>`<button class="pill ${t.id===kartei.id?'active':'inactive'}" onclick="selectKartei('${t.id}','${kartei.id}')">${t.icon} ${escapeHtml(t.label)}</button>`).join('')
+    const pills = getAllTabs().filter(t=>!t.special).map(t=>`<button class="pill ${t.id===kartei.id?'active':'inactive'}" onclick="selectKartei('${t.id}','${kartei.id}')">${escapeHtml(t.label)}</button>`).join('')
       + `<button class="pill inactive" onclick="addKartei()" title="Neue Kartei">+ Kartei</button>`;
     return `<div class="pill-scroll">${pills}</div>` + renderKarteiTab(kartei.id);
   }
@@ -439,21 +435,19 @@ function renderOptionsModal(){
   const tabs = getAllTabs();
   const tabRows = tabs.map((t, idx)=>{
     const karteiObj = !t.special ? active.karteien.find(k=>k.id===t.id) : null;
-    const iconHandler = t.special ? `onSpecialTabIcon('${t.id}',this)` : `onKarteiIconInput('${t.id}',this)`;
     const nameHandler = t.special ? `onSpecialTabLabel('${t.id}',this)` : `onKarteiNameInline('${t.id}',this)`;
     return `<div style="background:var(--panel-raised);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;">
       <div class="row">
-        <input type="text" value="${escapeHtml(t.icon)}" oninput="${iconHandler}" onchange="render()" maxlength="4" style="width:48px;text-align:center;flex-shrink:0;">
         <input type="text" value="${escapeHtml(t.label)}" oninput="${nameHandler}" onchange="render()" style="flex:1;">
       </div>
       <div class="row between">
         ${karteiObj
-          ? `<button class="btn btn-raised" style="padding:5px 8px;font-size:11px;" onclick="toggleKarteiCheckboxFeature('${t.id}')">${karteiObj.hasCheckbox?'☑':'☐'} Checkbox-Feld</button>`
+          ? `<button class="btn btn-raised" style="padding:5px 8px;font-size:11px;" onclick="toggleKarteiCheckboxFeature('${t.id}')">${checkBox(karteiObj.hasCheckbox)} Checkbox-Feld</button>`
           : `<span class="small-muted">Fester Tab</span>`}
         <div class="row" style="gap:4px;">
           <button class="icon-btn raised" style="${idx===0?'opacity:0.3;':''}" ${idx===0?'disabled':''} onclick="moveTab('${t.id}',-1)">↑</button>
           <button class="icon-btn raised" style="${idx===tabs.length-1?'opacity:0.3;':''}" ${idx===tabs.length-1?'disabled':''} onclick="moveTab('${t.id}',1)">↓</button>
-          ${karteiObj ? `<button class="icon-btn raised" style="color:var(--wax);" onclick="deleteKartei('${t.id}')">🗑</button>` : ''}
+          ${karteiObj ? `<button class="icon-btn raised" style="color:var(--wax);" onclick="deleteKartei('${t.id}')" title="Kartei löschen">${icon('trash-2',17)}</button>` : ''}
         </div>
       </div>
     </div>`;
@@ -464,32 +458,32 @@ function renderOptionsModal(){
       <input type="text" value="${escapeHtml(d.formula)}" oninput="onOracleDieFormula('${d.id}',this,'${field}')" placeholder="z.B. 1d20" style="flex:1;">
       <button class="icon-btn raised" style="${idx===0?'opacity:0.3;':''}" ${idx===0?'disabled':''} onclick="moveOracleDie('${d.id}',-1,'${field}')">↑</button>
       <button class="icon-btn raised" style="${idx===active[field].length-1?'opacity:0.3;':''}" ${idx===active[field].length-1?'disabled':''} onclick="moveOracleDie('${d.id}',1,'${field}')">↓</button>
-      <button class="icon-btn raised" style="color:var(--wax);" onclick="deleteOracleDie('${d.id}','${field}')">🗑</button>
+      <button class="icon-btn raised" style="color:var(--wax);" onclick="deleteOracleDie('${d.id}','${field}')" title="Würfel löschen">${icon('trash-2',17)}</button>
     </div>`).join('');
   return `<div class="modal-overlay"><div class="modal-sheet">
     <div class="row between"><span class="label" style="color:var(--gold);">Optionen — ${escapeHtml(camp?camp.name:'')}</span>
       <button class="icon-btn" onclick="closeOptions()">✕</button></div>
     <div class="modal-scroll" style="display:flex;flex-direction:column;gap:20px;max-height:70vh;overflow-y:auto;padding-right:2px;">
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <span class="label">📑 Tabs</span>
+        <span class="label">Tabs</span>
         <p class="small-muted">Name, Icon (ein Emoji) und Reihenfolge aller Tabs — auch der festen wie Kampf, Orakel, Charakter, Text.</p>
         ${tabRows}
         <button class="btn btn-raised" onclick="addKartei()">+ Neue Kartei</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <span class="label">🎲 Orakel-Würfel</span>
+        <span class="label">Orakel-Würfel</span>
         <p class="small-muted">Name + Formel (z.B. 2W6, 3W7+1) der schnellen Würfel-Buttons im Orakel-Tab. Eigener Verlauf, unabhängig vom Kampf-Tab.</p>
         ${dieRows('oracleDice')}
         <button class="btn btn-raised" onclick="addOracleDie('oracleDice')">+ Würfel hinzufügen</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <span class="label">⚔️ Kampf-Würfel</span>
+        <span class="label">Kampf-Würfel</span>
         <p class="small-muted">Eigene Würfel-Buttons und eigener Ergebnis-Verlauf für den Kampf-Tab, getrennt vom Orakel.</p>
         ${dieRows('battleDice')}
         <button class="btn btn-raised" onclick="addOracleDie('battleDice')">+ Würfel hinzufügen</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <span class="label">🗺️ Karte</span>
+        <span class="label">Karte</span>
         <button class="row between" style="border-radius:10px;padding:10px 12px;background:${active.areasEnabled?'var(--panel-raised)':'transparent'};border:1px solid ${active.areasEnabled?'var(--gold)':'var(--border)'};color:var(--text);text-align:left;" onclick="toggleAreasEnabled()">
           <span>Gebiete (Begegnungstabelle pro Feld, z.B. Hyperborea)</span>${active.areasEnabled?'<span style="color:var(--gold);">✓</span>':''}
         </button>
@@ -497,18 +491,18 @@ function renderOptionsModal(){
       </div>
       ${renderSyncOptions()}
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <span class="label">🗺️ Gelände-Grafiken</span>
+        <span class="label">Gelände-Grafiken</span>
         ${Object.keys(TERRAIN_IMAGES).length
           ? `<p class="small-muted" style="margin:0;">${Object.keys(TERRAIN_IMAGES).length} eigene Grafiken aktiv (nur auf diesem Gerät gespeichert, nicht auf der Webseite).</p>
              <div class="row wrap" style="gap:8px;">
-               <button class="btn btn-raised" onclick="triggerTerrainImagesImport()">⬆ Andere Datei importieren</button>
+               <button class="btn btn-raised" onclick="triggerTerrainImagesImport()">Andere Datei importieren</button>
                <button class="btn btn-outline-wax" onclick="removeTerrainImages()">Entfernen (gezeichnete Symbole nutzen)</button>
              </div>`
           : `<p class="small-muted" style="margin:0;">Eigene Kacheln für Hex-Karten (z.B. aus dem Atlas). Die Datei bleibt auf diesem Gerät — sie wird nicht auf die Webseite hochgeladen. Ohne Import werden gezeichnete Symbole verwendet.</p>
-             <button class="btn btn-raised" style="align-self:flex-start;" onclick="triggerTerrainImagesImport()">⬆ Grafiken importieren (.json)</button>`}
+             <button class="btn btn-raised" style="align-self:flex-start;" onclick="triggerTerrainImagesImport()">Grafiken importieren (.json)</button>`}
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <span class="label">💾 Speicher</span>
+        <span class="label">Speicher</span>
         ${renderStorageSection()}
       </div>
     </div>
@@ -538,14 +532,14 @@ function renderStorageSection(){
         ? `<button class="btn" style="background:var(--wax);color:var(--text);padding:4px 8px;font-size:12px;" onclick="restoreBackup(${b.id})">Ersetzen</button>
            <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="cancelRestoreBackup()">Abbrechen</button>`
         : `<button class="icon-btn raised" title="Wiederherstellen" onclick="askRestoreBackup(${b.id})">↺</button>
-           <button class="icon-btn raised" title="Herunterladen" onclick="downloadBackup(${b.id})">⬇</button>`}
+           <button class="icon-btn raised" title="Herunterladen" onclick="downloadBackup(${b.id})">${icon('download',17)}</button>`}
     </div>`;
   }).join('');
   return `<p class="small-muted">Daten: ${formatBytes(lastSavedBytes)}${quota}. ${persistNote}</p>
     <p class="small-muted">Sicherungen (automatisch bei App-Start, alle 10 Minuten und vor Importen/Löschen; die letzten ${BACKUP_KEEP} bleiben). Wiederherstellen ersetzt <b>alle</b> Kampagnen — der aktuelle Stand wird vorher selbst gesichert.</p>
     ${ui.confirmRestoreBackupId ? `<p class="small-muted" style="color:var(--wax);">Wirklich alle Kampagnen durch diese Sicherung ersetzen?</p>` : ''}
     ${list}
-    <button class="btn btn-raised" onclick="manualBackup()">💾 Jetzt sichern</button>`;
+    <button class="btn btn-raised" onclick="manualBackup()">Jetzt sichern</button>`;
 }
 
 function renderCampaignSwitcherModal(){
@@ -554,7 +548,7 @@ function renderCampaignSwitcherModal(){
       return `<div class="row" style="background:var(--panel-raised);border:1px solid var(--gold);border-radius:10px;padding:8px;">
         <input type="text" value="${escapeHtml(ui.campaignNameDraft)}" oninput="onCampaignNameDraft(this)" style="flex:1;">
         <button class="icon-btn" onclick="saveCampaignName()">✓</button>
-        ${STATE.campaigns.length>1 ? `<button class="icon-btn" style="color:var(--wax);" onclick="deleteCampaign('${camp.id}')">🗑</button>` : ''}
+        ${STATE.campaigns.length>1 ? `<button class="icon-btn" style="color:var(--wax);" onclick="deleteCampaign('${camp.id}')" title="Kampagne löschen">${icon('trash-2',17)}</button>` : ''}
       </div>`;
     }
     const active = camp.id===STATE.activeCampaignId;

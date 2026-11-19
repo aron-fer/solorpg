@@ -132,7 +132,7 @@ async function syncSave(id, opts){
   const st = syncCampState(id) || {};
   const hash = syncDataHash(id);
   if(!opts.force && st.sha && st.hash===hash){
-    if(!opts.quiet) showToast('☁ Schon gespeichert');
+    if(!opts.quiet) showToast('Schon gespeichert');
     syncChanged = false; render(); return true;
   }
   ui.sync.busy = true; ui.sync.error = null; render();
@@ -167,7 +167,7 @@ async function syncSave(id, opts){
     syncPersist();
     syncChanged = false;
     if(ui.sync.remote && ui.sync.remote.campId===id) ui.sync.remote = null;
-    if(!opts.quiet) showToast('☁ Gespeichert');
+    if(!opts.quiet) showToast('Gespeichert');
     return true;
   }catch(e){
     ui.sync.error = (e && e.message) || String(e);
@@ -214,7 +214,7 @@ function syncApplyFile(id, text, path, sha){
 function syncLoadRemote(){
   const r = ui.sync.remote;
   if(!r) return;
-  try{ syncApplyFile(r.campId, r.text, r.path, r.sha); ui.sync.remote = null; showToast('☁ Geladen'); }
+  try{ syncApplyFile(r.campId, r.text, r.path, r.sha); ui.sync.remote = null; showToast('Geladen'); }
   catch(e){ ui.sync.error = 'Laden: '+(e.message||e); }
   render();
 }
@@ -248,7 +248,7 @@ async function syncLoadFromList(path, sha){
     normalizedCampaign = null;
     ui.sync.listOpen = false;
     saveState(); syncChanged = false; render();
-    showToast('☁ Geladen');
+    showToast('Geladen');
   }catch(e){ ui.sync.error = 'Laden: '+(e.message||e); render(); }
 }
 
@@ -277,7 +277,7 @@ function renderSyncHeaderButton(){
   if(!syncConfigured()) return '';
   const st = syncCampState(STATE.activeCampaignId);
   const unsaved = !st || !st.sha || syncChanged;
-  return `<button class="icon-btn sync-btn ${unsaved?'unsaved':''}" onclick="syncSave()" title="${unsaved ? 'Auf GitHub speichern (ungespeicherte Änderungen)' : 'Auf GitHub gespeichert'}" aria-label="Speichern">${ui.sync.busy ? '⏳' : '☁'}</button>`;
+  return `<button class="icon-btn sync-btn ${unsaved?'unsaved':''}" onclick="syncSave()" title="${unsaved ? 'Auf GitHub speichern (ungespeicherte Änderungen)' : 'Auf GitHub gespeichert'}" aria-label="Speichern">${ui.sync.busy ? '…' : icon('cloud',20)}</button>`;
 }
 function syncWhen(iso){
   if(!iso) return '';
@@ -289,12 +289,12 @@ function renderSyncBanner(){
   if(r && r.campId===STATE.activeCampaignId){
     const from = [r.savedBy, syncWhen(r.savedAt)].filter(Boolean).join(', ');
     return r.conflict
-      ? `<div class="sync-banner warn"><span>⚠️ Diese Kampagne wurde hier <b>und</b> online geändert${from ? ` (online: ${escapeHtml(from)})` : ''}. Welcher Stand soll gelten?</span>
+      ? `<div class="sync-banner warn"><span>Diese Kampagne wurde hier <b>und</b> online geändert${from ? ` (online: ${escapeHtml(from)})` : ''}. Welcher Stand soll gelten?</span>
           <div class="row wrap" style="gap:6px;"><button class="btn btn-gold" onclick="syncLoadRemote()">Online-Stand laden</button><button class="btn btn-raised" onclick="syncKeepLocal()">Diesen Stand behalten</button></div></div>`
-      : `<div class="sync-banner"><span>☁ Neuerer Stand online${from ? ` (${escapeHtml(from)})` : ''}.</span>
+      : `<div class="sync-banner"><span>Neuerer Stand online${from ? ` (${escapeHtml(from)})` : ''}.</span>
           <div class="row wrap" style="gap:6px;"><button class="btn btn-gold" onclick="syncLoadRemote()">Laden</button><button class="btn btn-raised" onclick="syncDismissRemote()">Später</button></div></div>`;
   }
-  if(ui.sync.error) return `<div class="sync-banner warn"><span>☁ ${escapeHtml(ui.sync.error)}</span><button class="icon-btn" onclick="ui.sync.error=null; render();">✕</button></div>`;
+  if(ui.sync.error) return `<div class="sync-banner warn"><span>${escapeHtml(ui.sync.error)}</span><button class="icon-btn" onclick="ui.sync.error=null; render();">✕</button></div>`;
   return '';
 }
 function renderSyncListModal(){
@@ -303,7 +303,7 @@ function renderSyncListModal(){
     : !list.length ? '<p class="small-muted">Noch keine Speicherstände in diesem Repo.</p>'
     : list.map(f=>`<button class="table-row row between" style="color:var(--text);text-align:left;" onclick="syncLoadFromList(${jsStr(f.path)}, ${jsStr(f.sha)})"><span>${escapeHtml(f.name.replace(/\.json$/i,''))}</span><span class="small-muted">${formatBytes(f.size)}</span></button>`).join('');
   return `<div class="modal-overlay"><div class="modal-sheet">
-    <div class="row between"><span class="label" style="color:var(--gold);">☁ Aus GitHub laden</span><button class="icon-btn" onclick="closeSyncList()">✕</button></div>
+    <div class="row between"><span class="label" style="color:var(--gold);">Aus GitHub laden</span><button class="icon-btn" onclick="closeSyncList()">✕</button></div>
     <p class="small-muted" style="margin:0;">Eine Kampagne, die es auf diesem Gerät schon gibt, wird ersetzt (vorher wird gesichert); sonst kommt sie neu dazu.</p>
     <div class="table-rows">${rows}</div>
   </div></div>`;
@@ -323,7 +323,7 @@ async function testSyncConnection(){
     const res = await ghFetch('GET', '');
     if(!res.ok) throw ghError(res, 'Verbindung');
     const repo = await res.json();
-    ui.sync.testMsg = repo.permissions && repo.permissions.push===false ? '⚠️ Verbunden, aber ohne Schreibrecht.' : `✔ Verbunden mit ${repo.full_name}${repo.private ? ' (privat)' : ' (öffentlich!)'}`;
+    ui.sync.testMsg = repo.permissions && repo.permissions.push===false ? 'Verbunden, aber ohne Schreibrecht.' : `✔ Verbunden mit ${repo.full_name}${repo.private ? ' (privat)' : ' (öffentlich!)'}`;
   }catch(e){ ui.sync.testMsg = '✘ '+(e.message||e); }
   render();
 }
@@ -332,7 +332,7 @@ function renderSyncOptions(){
   const field = (key, label, val, ph, type) => `<label class="small-muted" style="display:flex;flex-direction:column;gap:4px;">${label}
     <input type="${type||'text'}" value="${escapeHtml(val||'')}" placeholder="${escapeHtml(ph)}" oninput="onSyncCfg('${key}',this)" autocomplete="off" autocapitalize="off" spellcheck="false"></label>`;
   return `<div style="display:flex;flex-direction:column;gap:8px;">
-    <span class="label">☁ Speichern auf GitHub</span>
+    <span class="label">Speichern auf GitHub</span>
     <p class="small-muted" style="margin:0;">Speichert jede Kampagne als Datei in einem eigenen Branch deines Repos, damit du sie auf Handy und PC abwechselnd spielen kannst. Einstellungen und Schlüssel bleiben nur auf diesem Gerät und kommen nicht in Exporte.</p>
     ${field('repo','Repo (Besitzer/Name)', raw.repo, 'z.B. aron-fer/solo-procedures')}
     ${field('token','Zugriffsschlüssel (Fine-grained token)', raw.token, 'github_pat_…', 'password')}

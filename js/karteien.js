@@ -2,7 +2,7 @@
 // ---- Karteien (generic NPCs/Orte/Threads/... tab type) ----
 function addKartei(){
   const active = getActive();
-  const newKartei = {id:uid(), name:`Kartei ${active.karteien.length+1}`, icon:'📇', hasCheckbox:false, entries:[]};
+  const newKartei = {id:uid(), name:`Kartei ${active.karteien.length+1}`, hasCheckbox:false, entries:[]};
   updateActive(camp=>({...camp, karteien:[...camp.karteien, newKartei], tabOrder:[...camp.tabOrder, newKartei.id]}));
   ui.activeTab = newKartei.id;
   saveState(); render();
@@ -29,10 +29,6 @@ function deleteKartei(id){
 }
 function onKarteiNameInline(id, el){
   updateActive(camp=>({...camp, karteien: camp.karteien.map(k=>k.id===id?{...k, name:el.value}:k)}));
-  saveState();
-}
-function onKarteiIconInput(id, el){
-  updateActive(camp=>({...camp, karteien: camp.karteien.map(k=>k.id===id?{...k, icon: el.value || '📇'}:k)}));
   saveState();
 }
 
@@ -191,16 +187,16 @@ function renderKarteiTab(karteiId){
   if(ui.managing){
     html += `<div class="panel"><div class="row wrap" style="gap:8px;">
       <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="startRenameKartei('${kartei.id}')">✎ Umbenennen</button>
-      <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="toggleKarteiCheckboxFeature('${kartei.id}')">${kartei.hasCheckbox?'☑':'☐'} Checkbox-Feld</button>
-      <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="deleteKartei('${kartei.id}')">🗑 Kartei löschen</button>
+      <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="toggleKarteiCheckboxFeature('${kartei.id}')">${checkBox(kartei.hasCheckbox)} Checkbox-Feld</button>
+      <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="deleteKartei('${kartei.id}')">Kartei löschen</button>
     </div></div>`;
   }
-  html += `<div class="panel"><div class="row between"><span class="label">📇 ${escapeHtml(kartei.name)}</span>
+  html += `<div class="panel"><div class="row between"><span class="label">${escapeHtml(kartei.name)}</span>
     <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="startNewKarteiEntry('${kartei.id}')">+ Neu</button></div>`;
   if(kartei.entries.length){
     const qRaw = (ui.karteiSearch||{})[kartei.id] || '';
     html += `<div class="row" style="gap:6px;">
-      <input type="search" id="kartei-search-${kartei.id}" value="${escapeHtml(qRaw)}" placeholder="🔍 Suchen (Titel und Notizen)…" oninput="onKarteiSearch('${kartei.id}',this)" style="flex:1;min-width:0;">
+      <input type="search" id="kartei-search-${kartei.id}" value="${escapeHtml(qRaw)}" placeholder="Suchen (Titel und Notizen)…" oninput="onKarteiSearch('${kartei.id}',this)" style="flex:1;min-width:0;">
       ${qRaw ? `<button class="icon-btn raised" title="Suche leeren" onclick="clearKarteiSearch('${kartei.id}')">✕</button>` : ''}
       <button class="icon-btn raised" title="Alle zuklappen" onclick="setAllKarteiCollapsed('${kartei.id}', true)">⊟</button>
       <button class="icon-btn raised" title="Alle aufklappen" onclick="setAllKarteiCollapsed('${kartei.id}', false)">⊞</button>
@@ -231,13 +227,13 @@ function renderKarteiEntryModal(){
     <input type="text" value="${escapeHtml(ui.karteiEntryDraft.title)}" placeholder="Titel" oninput="onKarteiEntryTitle(this)">
     ${parentField}
     <textarea id="kartei-entry-notes-textarea" rows="8" placeholder="Notizen… [[Name]] verlinkt" oninput="onKarteiEntryNotes(this)">${escapeHtml(ui.karteiEntryDraft.notes)}</textarea>
-    <button class="btn btn-raised" style="align-self:flex-start;padding:6px 10px;font-size:12px;" onclick="openLinkPicker('kartei')">🔗 Verlinken</button>
+    <button class="btn btn-raised" style="align-self:flex-start;padding:6px 10px;font-size:12px;" onclick="openLinkPicker('kartei')">Verlinken</button>
     ${kartei && kartei.hasCheckbox ? `<button class="row" onclick="toggleKarteiEntryDraftResolved()" style="gap:8px;">
       <span class="thread-check ${ui.karteiEntryDraft.resolved?'done':''}">${ui.karteiEntryDraft.resolved?'✓':''}</span>
       <span class="small-muted">Erledigt</span>
     </button>` : ''}
     <div class="row">
-      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteKarteiEntry()">🗑 Löschen</button>` : ''}
+      ${!isNew ? `<button class="btn btn-outline-wax" onclick="deleteKarteiEntry()">Löschen</button>` : ''}
       <button class="btn btn-gold" style="flex:1;" onclick="saveKarteiEntry()">✓ Speichern</button>
     </div>
   </div></div>`;

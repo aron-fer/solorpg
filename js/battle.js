@@ -168,7 +168,7 @@ function renderBattleDamageBar(){
   const target = battleTargetOf(sb), i = sb.members.indexOf(target)+1;
   const hd = enemyHdMode() ? 'HD ' : '';
   return `<div class="battle-dmg-bar">
-    <span class="battle-dmg-target">🎯 ${escapeHtml(sb.name||'Gegner')} ${sb.members.length>1 ? i+' ' : ''}· ${hd}${mCur(target)}/${mMax(target)}</span>
+    <span class="battle-dmg-target">${escapeHtml(sb.name||'Gegner')} ${sb.members.length>1 ? i+' ' : ''}· ${hd}${mCur(target)}/${mMax(target)}</span>
     <button class="sb-step" onclick="stepBattleDmg('${sb.id}',-1)" aria-label="−1">−</button>
     <input type="number" min="1" id="dmg-${sb.id}" placeholder="0" style="width:52px;padding:4px 6px;" onkeydown="if(event.key==='Enter'){applyBattleHp('${sb.id}',-1);}">
     <button class="sb-step" onclick="stepBattleDmg('${sb.id}',1)" aria-label="+1">+</button>
@@ -360,7 +360,7 @@ function renderEnemyStatuses(sb, editing){
         return `<div style="display:flex;flex-direction:column;gap:6px;background:var(--panel-raised);border-radius:10px;padding:8px;">
           <div class="row">
             <input type="text" value="${escapeHtml(st.name)}" placeholder="Statusname" oninput="onStatblockStatusName('${sb.id}','${st.id}', this)" style="flex:1;">
-            <button class="icon-btn raised" style="color:var(--wax);" onclick="deleteStatblockStatus('${sb.id}','${st.id}')" title="Status löschen">🗑</button>
+            <button class="icon-btn raised" style="color:var(--wax);" onclick="deleteStatblockStatus('${sb.id}','${st.id}')" title="Status löschen">${icon('trash-2',17)}</button>
           </div>
           ${renderStatusControl(st.value,
             idx=>`toggleStatblockStatusBox('${sb.id}','${st.id}',${idx})`,
@@ -371,7 +371,7 @@ function renderEnemyStatuses(sb, editing){
       ${editing ? `<div class="row wrap" style="gap:6px;">
         <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="addStatblockStatus('${sb.id}')">+ Status</button>
         <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="duplicateStatblock('${sb.id}')">⧉ Neue Gruppe davon</button>
-        <button class="btn btn-outline-wax" style="padding:4px 8px;font-size:12px;margin-left:auto;" onclick="deleteStatblock('${sb.id}')">🗑 Entfernen</button>
+        <button class="btn btn-outline-wax" style="padding:4px 8px;font-size:12px;margin-left:auto;" onclick="deleteStatblock('${sb.id}')">Entfernen</button>
       </div>` : ''}
     </div>` : ''}`;
 }
