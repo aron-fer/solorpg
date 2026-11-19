@@ -6,6 +6,7 @@ document.getElementById('file-import-terrain').addEventListener('change', functi
 let resizeIsDesk = window.innerWidth>=1100;
 window.addEventListener('resize', function(){
   if(!stateLoaded) return;
+  sizeMapLayout();
   const nowDesk = isDesk();
   if(nowDesk !== resizeIsDesk){
     resizeIsDesk = nowDesk;

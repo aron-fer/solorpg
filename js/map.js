@@ -197,18 +197,6 @@ function areaTableNames(){
 function areaDatalistHtml(){
   return `<datalist id="area-table-names">${areaTableNames().map(n=>`<option value="${escapeHtml(n)}"></option>`).join('')}</datalist>`;
 }
-// Moves the 📍 party marker here and rolls this hex's area table (which
-// resolves {{@terrain: …}} against this hex). The result also goes to the
-// Orakel log; it's shown on the map too.
-function travelAndEncounter(id){
-  updateCurrentMap(m=>({...m, markerNodeId:id}));
-  saveState();
-  rollAreaEncounter();
-  ui.rollPopup = null; // the map shows the result itself
-  const top = getActive().log[0];
-  ui.mapEncounterResult = top ? top.text : null;
-  render();
-}
 function brushLabel(brush){
   if(brush==='__clear') return 'Gelände, Siedlung & Lake entfernen';
   if(brush==='__delete') return 'Löschen';
@@ -241,8 +229,10 @@ function selectMapNode(id){
     return;
   }
   ui.mapPlayConnect = false;
+  ui.mapSheet = null;
   ui.selectedMapNodeId = (ui.selectedMapNodeId===id) ? null : id;
   render();
+  if(ui.selectedMapNodeId) requestAnimationFrame(()=>revealMapNode(id));
 }
 function onMapCanvasClick(evt){
   const svg = evt.currentTarget;
@@ -715,42 +705,9 @@ function mapTableButtons(cur){
 function shortTableLabel(name, group){
   return group && name.toLowerCase().startsWith(group.toLowerCase()+': ') ? name.slice(group.length+2) : name;
 }
+// Rolling from the map works like the table list: result window + Ergebnisse.
 function mapRoll(kind, id){
-  const active = getActive();
-  let text = null, title = null;
-  if(kind==='table'){
-    const t = active.tables.find(x=>x.id===id);
-    if(t){ text = rollOneEntry(t); title = t.name; }
-  } else {
-    const c = active.combos.find(x=>x.id===id);
-    if(c){
-      const included = c.tableIds.map(tid=>active.tables.find(t=>t.id===tid)).filter(Boolean);
-      text = included.length ? `${c.name}:\n${included.map(rollOneEntry).join('\n')}` : `${c.name}: (keine Tabellen in der Kombi)`;
-      title = c.name;
-    }
-  }
-  if(text==null) return;
-  pushLog(text, 'oracle', true, title);
-  ui.mapRolls = [{id:uid(), text}, ...(ui.mapRolls||[])].slice(0,3);
-  render();
-}
-function renderMapTableBar(cur){
-  const btns = mapTableButtons(cur);
-  if(!btns.length) return '';
-  const body = btns.map(b=>b.head
-    ? `<span class="small-muted" style="width:100%;margin-top:2px;">${escapeHtml(b.head)}</span>`
-    : `<button class="btn btn-raised" style="padding:5px 9px;font-size:12px;" onclick="mapRoll('${b.kind}','${b.id}')">${escapeHtml(b.label)}</button>`).join('');
-  const rolls = (ui.mapRolls||[]).map((r,i)=>`<div class="log-entry ${i===0?'latest':''}" style="align-items:flex-start;">
-      <span class="log-text" style="flex:1;">${escapeHtml(r.text)}${bestiaryButtonsFor(r.text)}</span>
-    </div>`).join('');
-  return `<div class="panel" style="gap:6px;padding:8px 10px;">
-    <details ${ui.mapTablesOpen?'open':''} ontoggle="ui.mapTablesOpen=this.open">
-      <summary class="label" style="cursor:pointer;">🎲 Tabellen</summary>
-      <div class="row wrap" style="gap:6px;margin-top:6px;">${body}</div>
-    </details>
-    ${rolls ? `<div style="display:flex;flex-direction:column;gap:2px;">${rolls}</div>
-      <div class="row" style="justify-content:flex-end;"><button class="link-chip" onclick="ui.mapRolls=[]; render();">Ergebnisse ausblenden</button></div>` : ''}
-  </div>`;
+  if(kind==='table') handleRollTable(id); else handleRollCombo(id);
 }
 // Open/closed state of the picker survives re-renders (each tick re-renders).
 function toggleMapPickerGroupOpen(g, open){
@@ -777,20 +734,38 @@ function renderMapTablePicker(cur){
   }).join('');
   const comboRows = active.combos.length ? `<span class="small-muted" style="margin-top:6px;">Kombinationen</span>`
     + active.combos.map(c=>`<button class="link-chip" style="${rowStyle}" onclick="toggleMapTablePick('combos','${c.id}')">${check(p.combos.includes(c.id))} 🧩 ${escapeHtml(c.name)}</button>`).join('') : '';
-  return `<details class="panel" style="gap:4px;padding:8px 10px;" ${ui.mapPickerOpen?'open':''} ontoggle="ui.mapPickerOpen=this.open">
+  return `<details class="map-fold" ${ui.mapPickerOpen?'open':''} ontoggle="ui.mapPickerOpen=this.open">
     <summary class="label" style="cursor:pointer;">🎲 Tabellen auf dieser Karte${n ? ` (${n})` : ''}</summary>
-    <span class="small-muted">Angehakte Gruppen, Tabellen und Kombinationen erscheinen beim Spielen als Knöpfe unter der Karte.</span>
+    <span class="small-muted">Angehakte Gruppen, Tabellen und Kombinationen erscheinen beim Spielen als Knöpfe neben der Karte (am Handy unter „Tabellen“).</span>
     <div style="display:flex;flex-direction:column;gap:2px;margin-top:4px;">${groupRows}${comboRows}</div>
   </details>`;
 }
 
+// ---- Karte tab ----
+// The map fills the space it gets; everything else sits next to it (wide
+// pane: a column) or on top of it (narrow: a sheet from below), so nothing
+// scrolls the map out of sight. Which of the two is decided by CSS from the
+// width of .map-layout (container query), not by the device.
+function mapSideState(){
+  if(ui.editingMapNodeId) return 'form';
+  if(ui.managing) return 'tools';
+  if(ui.selectedMapNodeId) return 'node';
+  if(ui.mapSheet==='tables') return 'tables';
+  return 'idle';
+}
+function toggleMapSheetTables(){ ui.mapSheet = ui.mapSheet==='tables' ? null : 'tables'; ui.selectedMapNodeId = null; render(); }
+function closeMapSide(){ ui.selectedMapNodeId = null; ui.mapSheet = null; ui.mapPlayConnect = false; render(); }
+function toggleMapSheetFull(){ ui.mapSheetFull = !ui.mapSheetFull; render(); }
+
 function renderMapTab(){
   const active = getActive();
   const cur = getCurrentMap();
-  let html = `<div class="pill-scroll">`;
+  let html = `<div class="pill-scroll map-head">`;
   html += active.maps.map(m=>`<button class="pill ${cur&&m.id===cur.id?'active':'inactive'}" onclick="setActiveMapId('${m.id}')">${escapeHtml(m.name)}</button>`).join('');
-  html += `<button class="icon-btn raised" style="border-radius:999px;" onclick="addMap()">+</button>`;
-  if(cur) html += `<button class="icon-btn ${cur.turns&&cur.turns.on?'active':'raised'}" style="border-radius:999px;margin-left:auto;font-size:13px;padding:6px 10px;" onclick="toggleTurnTracker()" title="Turn-Tracker für diese Karte ein/aus">⏳ Turns</button>`;
+  html += `<button class="icon-btn raised" style="border-radius:999px;" onclick="addMap()" title="Neue Karte">+</button>`;
+  if(cur) html += `<span style="margin-left:auto;"></span>
+    <button class="btn ${mapSideState()==='tables'?'btn-gold':'btn-raised'} map-tables-btn" style="padding:5px 10px;font-size:13px;" onclick="toggleMapSheetTables()">Tabellen</button>
+    <button class="btn ${cur.turns&&cur.turns.on?'btn-gold':'btn-raised'}" style="padding:5px 10px;font-size:13px;" onclick="toggleTurnTracker()" title="Turn-Tracker für diese Karte ein/aus">Turns</button>`;
   html += `</div>`;
 
   if(!cur){
@@ -798,119 +773,198 @@ function renderMapTab(){
       <button class="btn btn-raised" onclick="addMap()">+ Erste Karte anlegen</button></div>`;
     return html;
   }
+  html += renderTurnTracker(cur);
+  const state = mapSideState();
+  html += `<div class="map-layout">
+    <div class="panel map-stage" id="map-panel">
+      <div class="map-svg-wrap" ${zoomWrapAttrs('map')}></div>
+      <div class="row map-zoom" style="gap:4px;">${zoomControlsHtml('map','Ganze Karte zeigen')}</div>
+    </div>
+    <div class="map-side ${state} ${ui.mapSheetFull ? 'full' : ''}">${renderMapSide(cur, state)}</div>
+  </div>`;
+  return html;
+}
 
-  // Name and description are edited in edit mode only; while playing the
-  // name is in the pill above and the description folds away.
-  if(ui.managing){
-    html += `<div class="panel" style="gap:8px;">
-      <input type="text" value="${escapeHtml(cur.name)}" placeholder="Kartenname" oninput="onMapNameInput(this)">
-      <textarea class="grow-text" rows="2" placeholder="Beschreibung der Karte…" oninput="onMapDescInput(this)">${escapeHtml(cur.description)}</textarea>
-    </div>`;
-  } else if((cur.description||'').trim()){
-    html += `<details class="small-muted" style="padding:0 4px;"><summary style="cursor:pointer;">Beschreibung</summary>
-      <div class="log-text" style="margin-top:4px;">${escapeHtml(cur.description)}</div></details>`;
+// Contents of the column / sheet.
+function renderMapSide(cur, state){
+  const grab = `<button class="map-grab" onclick="toggleMapSheetFull()" title="${ui.mapSheetFull ? 'Kleiner' : 'Größer'}" aria-label="Blatt größer/kleiner"></button>`;
+  const head = (title, close, cls) => `${grab}<div class="map-side-head"><span class="map-side-title ${cls||''}">${title}</span>${close ? `<button class="icon-btn" onclick="${close}" title="Schließen">✕</button>` : ''}</div>`;
+  const hexMode = cur.grid==='hex';
+
+  if(state==='form') return renderMapNodeForm(cur, head);
+  if(state==='tools') return renderMapTools(cur, head);
+
+  if(state==='node'){
+    const n = cur.nodes.find(x=>x.id===ui.selectedMapNodeId);
+    if(!n){ ui.selectedMapNodeId = null; return renderMapSide(cur, mapSideState()); }
+    const meta = [`${hexMode ? 'Hex' : 'Raum'} ${n.num}`,
+      hexMode ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : '',
+      hexMode && mapNodeOnLine(cur, 'river', n.id) ? 'River' : '',
+      hexMode && mapNodeOnLine(cur, 'road', n.id) ? 'Road' : '',
+      areasOn() && n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · ');
+    let body = `<div class="map-side-meta">${escapeHtml(meta)}</div>
+      ${(n.desc||'').trim() ? `<div class="map-side-text">${escapeHtml(n.desc)}</div>` : `<p class="small-muted" style="margin:0;">Noch keine Beschreibung.</p>`}`;
+    if(!hexMode){
+      const edges = cur.edges.filter(e=>e.from===n.id || e.to===n.id).map(e=>{
+        const otherId = e.from===n.id ? e.to : e.from;
+        const other = cur.nodes.find(x=>x.id===otherId);
+        const dir = e.oneway ? (e.from===n.id ? '→' : '←') : '↔';
+        const note = e.label ? ` — ${escapeHtml(e.label)}` : '';
+        return `<div class="row between map-edge-row">
+          <button class="link-chip" style="flex:1;text-align:left;color:var(--text);text-decoration:none;" onclick="startEditMapEdge('${e.id}')">${e.type==='secret' ? 'geheim ' : ''}${dir} ${escapeHtml(other ? other.num+' · '+other.name : '?')}<span class="small-muted">${note}</span></button>
+          <button class="x-btn" onclick="deleteMapEdge('${e.id}')" title="Verbindung löschen">✕</button>
+        </div>`;
+      }).join('');
+      body += `<span class="label">Verbindungen</span>${edges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
+        ${ui.mapPlayConnect ? `<p class="small-muted" style="margin:0;color:var(--gold);">Tippe den Raum, der verbunden werden soll (leere Stelle = abbrechen).</p>` : ''}`;
+    }
+    const acts = `<button class="btn btn-gold" onclick="setMarkerHere('${n.id}')" ${cur.markerNodeId===n.id ? 'disabled style="opacity:.5;"' : ''}>${cur.markerNodeId===n.id ? 'Marker ist hier' : 'Marker hierher'}</button>
+      <button class="btn btn-raised" onclick="startEditMapNode('${n.id}')">Bearbeiten</button>
+      ${hexMode
+        ? `<button class="btn btn-raised" onclick="addConnectedRoomAuto('${n.id}')">+ Nachbarfeld</button>`
+        : `<button class="btn btn-raised" onclick="addConnectedRoomAuto('${n.id}')">+ Anschlussraum</button>
+           <button class="btn ${ui.mapPlayConnect?'btn-gold':'btn-raised'}" onclick="togglePlayConnect()">Verbinden</button>`}`;
+    return head(escapeHtml(n.name || (hexMode ? 'Hex '+n.num : 'Raum '+n.num)), 'closeMapSide()')
+      + `<div class="map-side-body">${body}</div><div class="map-side-acts">${acts}</div>`;
   }
 
-  if(ui.managing){
-    const connectLabel = ui.mapConnectFrom==='PENDING' ? '🔗 Ersten Raum tippen…' : (ui.mapConnectFrom ? '🔗 Zweiten Raum tippen…' : '🔗 Verbinden');
-    html += `<div class="row wrap" style="gap:8px;">
-      <button class="btn btn-gold" style="padding:6px 10px;font-size:12px;" onclick="addMapNode()">+ ${cur.grid==='hex' ? 'Hex' : 'Raum'}</button>
-      ${cur.grid!=='hex' ? `<button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>` : ''}
-      <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;margin-left:auto;" onclick="deleteMap('${cur.id}')">🗑 Karte löschen</button>
-    </div>
-    <div class="row wrap" style="gap:8px;align-items:center;">
-      <span class="small-muted">Raster:</span>
-      <div class="mode-toggle" style="width:auto;">
-        <button style="padding:6px 10px;font-size:12px;${cur.grid==='none'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('none')">Kein Raster</button>
-        <button style="padding:6px 10px;font-size:12px;${cur.grid==='square'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('square')">Quadrate</button>
-        <button style="padding:6px 10px;font-size:12px;${cur.grid==='hex'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('hex')">Hex</button>
-      </div>
-      ${cur.grid!=='none' ? `<input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" onchange="onMapGridSizeInput(this,true)" style="width:100px;">` : ''}
-    </div>
-    ${cur.grid==='hex' ? `<div style="display:flex;flex-direction:column;gap:4px;">
-      <span class="small-muted">Pinsel${ui.mapBrush ? ': <b style="color:var(--gold);">'+escapeHtml(brushLabel(ui.mapBrush))+'</b> — '+(ui.mapBrush==='__delete' ? 'Hex tippen = Hex löschen' : (ui.mapBrush==='river' || ui.mapBrush==='road') ? (ui.mapLineId ? 'nächstes Hex tippen = verlängern, letztes Hex nochmal = fertig' : 'erstes Hex tippen') : 'leere Stelle tippen = neues Hex, Hex tippen = anwenden'+(ui.mapBrush.startsWith('set:') || ui.mapBrush==='ov:lake' ? ' (nochmal = entfernen)' : '')) : ' (optional) — Gelände oder Siedlung wählen, dann Hexes antippen'}</span>
-      ${renderTerrainPalette(ui.mapBrush, 'setMapBrush', true)}
-    </div>` : ''}
-    ${areasOn() ? `<div style="display:flex;flex-direction:column;gap:4px;">
-      <span class="small-muted">Gebiet-Pinsel (Begegnungstabelle, z.B. New Pictland) — solange ausgefüllt, bekommt jedes angetippte Hex dieses Gebiet. Leeren = aus.</span>
+  // idle / tables: the map itself – description and its tables.
+  const btns = mapTableButtons(cur);
+  const tables = btns.length
+    ? btns.map(b=>b.head ? `<span class="label map-tables-head">${escapeHtml(b.head)}</span>`
+        : `<button class="btn btn-raised map-roll-btn" onclick="mapRoll('${b.kind}','${b.id}')">${escapeHtml(b.label.replace(/^🧩 /,''))}</button>`).join('')
+    : `<p class="small-muted" style="margin:0;">Noch keine Tabellen für diese Karte. Im Bearbeiten-Modus unter „Tabellen auf dieser Karte“ auswählen.</p>`;
+  const hint = cur.nodes.length===0
+    ? (hexMode ? 'Noch keine Hexes – tippe in die Karte, um das erste anzulegen.' : 'Noch keine Räume – tippe in die Karte, um den ersten anzulegen.')
+    : (hexMode ? 'Hex antippen = Details' : 'Raum antippen = Details, dann leere Stelle = verbundener neuer Raum');
+  return head(escapeHtml(cur.name), state==='tables' ? 'closeMapSide()' : '')
+    + `<div class="map-side-body">
+      ${(cur.description||'').trim() ? `<div class="map-side-text muted">${escapeHtml(cur.description)}</div>` : ''}
+      <span class="label">Tabellen dieser Karte</span>
+      <div class="map-tables">${tables}</div>
+      <p class="small-muted map-hint" style="margin:0;">${hint}</p>
+    </div>`;
+}
+
+// Edit mode: brushes on top (always in view), map settings folded below.
+function renderMapTools(cur, head){
+  const hexMode = cur.grid==='hex';
+  const brushHint = ui.mapBrush
+    ? (ui.mapBrush==='__delete' ? 'Hex antippen = löschen'
+      : (ui.mapBrush==='river' || ui.mapBrush==='road') ? (ui.mapLineId ? 'nächstes Hex = verlängern, letztes nochmal = fertig' : 'erstes Hex antippen')
+      : 'leere Stelle = neues Hex, Hex = anwenden'+(ui.mapBrush.startsWith('set:') || ui.mapBrush==='ov:lake' ? ' (nochmal = entfernen)' : ''))
+    : (hexMode ? 'Kein Pinsel: Hex antippen = bearbeiten, leere Stelle = neues Hex' : 'Raum antippen = bearbeiten, leere Stelle = neuer Raum');
+  const title = ui.mapBrush ? `Pinsel: <b style="color:var(--gold);font-weight:normal;">${escapeHtml(brushLabel(ui.mapBrush))}</b>` : (hexMode ? 'Pinsel' : 'Werkzeuge');
+  let body = `<p class="small-muted" style="margin:0;">${brushHint}${ui.mapBrush ? ` · <button class="link-chip" onclick="setMapBrush('${ui.mapBrush}')">Pinsel aus</button>` : ''}</p>`;
+  if(ui.mapMoveArmedId) body += `<p class="small-muted" style="margin:0;color:var(--gold);">Tippe auf die Karte, um ${hexMode ? 'das Hex' : 'den Raum'} dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></p>`;
+  if(hexMode) body += renderTerrainPalette(ui.mapBrush, 'setMapBrush', true);
+  else {
+    const connectLabel = ui.mapConnectFrom==='PENDING' ? 'Ersten Raum tippen…' : (ui.mapConnectFrom ? 'Zweiten Raum tippen…' : 'Verbinden');
+    body += `<div class="row wrap" style="gap:6px;">
+      <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="addMapNode()">+ Raum</button>
+      <button class="btn ${ui.mapConnectFrom?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="toggleMapConnectMode()">${connectLabel}</button>
+    </div>`;
+  }
+  if(areasOn()) body += `<div style="display:flex;flex-direction:column;gap:4px;">
+      <span class="label">Gebiet-Pinsel</span>
+      <span class="small-muted">Begegnungstabelle, z.B. New Pictland – solange ausgefüllt, bekommt jedes angetippte Hex dieses Gebiet.</span>
       <div class="row" style="gap:6px;">
-        <input type="text" list="area-table-names" value="${escapeHtml(ui.mapAreaBrush||'')}" oninput="onMapAreaBrushInput(this)" onchange="render()" placeholder="Gebiet…" style="flex:1;">
+        <input type="text" list="area-table-names" value="${escapeHtml(ui.mapAreaBrush||'')}" oninput="onMapAreaBrushInput(this)" onchange="render()" placeholder="Gebiet… (leer = aus)" style="flex:1;">
         ${ui.mapAreaBrush ? `<button class="icon-btn raised" title="Gebiet-Pinsel aus" onclick="ui.mapAreaBrush=''; render();">✕</button>` : ''}
       </div>
       ${areaDatalistHtml()}
-    </div>` : ''}
-    <p class="small-muted" style="margin:0;">${cur.grid==='hex' ? 'Tippe auf eine leere Stelle in der Karte, um dort ein neues Hex anzulegen.' : `Tippe auf eine leere Stelle in der Karte, um dort einen neuen Raum anzulegen${cur.grid!=='none' ? ' — Räume rasten automatisch am Raster ein' : ''}.`}</p>`;
-    html += renderMapTablePicker(cur);
-    if(ui.mapMoveArmedId){
-      html += `<div class="panel" style="background:var(--panel-raised);"><span class="small-muted">Tippe auf die Karte, um ${cur.grid==='hex' ? 'das Hex' : 'den Raum'} dorthin zu verschieben. <button class="link-chip" onclick="cancelMoveMapNode()">Abbrechen</button></span></div>`;
-    }
-  }
-
-  if(!ui.managing && (ui.selectedMapNodeId || ui.mapPlayConnect)){
-    html += `<p class="small-muted" style="margin:0;">${ui.mapPlayConnect
-      ? '🔗 Tippe den Raum, der verbunden werden soll (leere Stelle = abbrechen).'
-      : (cur.grid==='hex' ? 'Leere Stelle tippen = neues Hex.' : 'Leere Stelle tippen = neuer Raum, verbunden mit dem gewählten.')}</p>`;
-  }
-  html += renderTurnTracker(cur);
-  html += `<div class="panel" id="map-panel" style="padding:6px;gap:6px;">
-    <div class="map-svg-wrap" ${zoomWrapAttrs('map')}></div>
-    <div class="row" style="gap:4px;justify-content:flex-end;">${zoomControlsHtml('map','Ganze Karte zeigen')}</div>
-  </div>`;
-
-  if(!ui.managing) html += renderMapTableBar(cur);
-  if(ui.mapEncounterResult){
-    html += `<div class="panel" style="border-color:var(--gold-dim);">
-      <div class="row between" style="gap:8px;align-items:flex-start;">
-        <span class="log-text" style="color:var(--text);">🎲 ${escapeHtml(ui.mapEncounterResult)}</span>
-        <button class="icon-btn" onclick="ui.mapEncounterResult=null; render();">✕</button>
-      </div>
     </div>`;
-  }
-  if(cur.nodes.length===0){
-    html += `<p class="small-muted">${cur.grid==='hex' ? (ui.managing ? 'Noch keine Hexes — tippe oben auf „+ Hex".' : 'Noch keine Hexes — tippe in die Karte, um das erste anzulegen.') : (ui.managing ? 'Noch keine Räume — tippe oben auf „+ Raum".' : 'Noch keine Räume — tippe in die Karte, um den ersten anzulegen.')}</p>`;
-  }
-
-  if(!ui.managing && ui.selectedMapNodeId){
-    const n = cur.nodes.find(x=>x.id===ui.selectedMapNodeId);
-    if(n){
-      const connectedEdges = cur.edges.filter(e=>e.from===n.id || e.to===n.id).map(e=>{
-        const otherId = e.from===n.id ? e.to : e.from;
-        const other = cur.nodes.find(x=>x.id===otherId);
-        const dirLabel = e.oneway ? (e.from===n.id ? '→' : '←') : '↔';
-        const typeLabel = e.type==='secret' ? '🔒 ' : '';
-        const note = e.label ? ` — ${escapeHtml(e.label)}` : (e.desc ? ' — 📝' : '');
-        return `<div class="row between" style="gap:8px;">
-          <span style="font-size:13px;cursor:pointer;flex:1;" onclick="startEditMapEdge('${e.id}')">${typeLabel}${dirLabel} ${escapeHtml(other?(other.num+' · '+other.name):'?')}<span class="small-muted">${note}</span></span>
-          <button class="icon-btn" onclick="deleteMapEdge('${e.id}')">🗑</button>
-        </div>`;
-      }).join('');
-      html += `<div class="panel" style="gap:8px;">
-        <div class="row between" style="gap:8px;">
-          <span class="small-muted">${cur.grid==='hex' ? 'Hex' : 'Raum'} ${escapeHtml(n.num)}</span>
-          <button class="icon-btn" onclick="selectMapNode('${n.id}')">✕</button>
-        </div>
-        <input type="text" value="${escapeHtml(n.name)}" oninput="onSelectedMapNodeNameInput('${n.id}',this)" onblur="render()" placeholder="${cur.grid==='hex' ? 'Name des Hex' : 'Name des Raums'}" style="font-weight:600;color:var(--gold);">
-        <textarea class="grow-text" rows="3" placeholder="Beschreibung, Fallen, Inhalt…" oninput="onSelectedMapNodeDescInput('${n.id}',this)" onblur="render()">${escapeHtml(n.desc)}</textarea>
-        ${cur.grid==='hex'
-          ? `<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="addConnectedRoomAuto('${n.id}')">+ Nachbarfeld</button>`
-          : `<div style="display:flex;flex-direction:column;gap:4px;">
-          <span class="small-muted">Verbindungen</span>
-          ${connectedEdges || '<p class="small-muted" style="margin:0;">Keine Verbindungen.</p>'}
-          <div class="row wrap" style="gap:8px;">
-            <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="addConnectedRoomAuto('${n.id}')">+ Anschlussraum</button>
-            <button class="btn ${ui.mapPlayConnect?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="togglePlayConnect()">${ui.mapPlayConnect ? '🔗 Raum tippen…' : '🔗 Mit Raum verbinden'}</button>
+  body += `<details class="map-fold" ${ui.mapSettingsOpen?'open':''} ontoggle="ui.mapSettingsOpen=this.open">
+      <summary class="label">Karte</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+        <input type="text" value="${escapeHtml(cur.name)}" placeholder="Kartenname" oninput="onMapNameInput(this)" onchange="render()">
+        <textarea class="grow-text" rows="2" placeholder="Beschreibung der Karte…" oninput="onMapDescInput(this)">${escapeHtml(cur.description)}</textarea>
+        <div class="row wrap" style="gap:8px;align-items:center;">
+          <span class="small-muted">Raster:</span>
+          <div class="mode-toggle" style="width:auto;">
+            <button style="padding:6px 10px;font-size:12px;${cur.grid==='none'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('none')">Kein Raster</button>
+            <button style="padding:6px 10px;font-size:12px;${cur.grid==='square'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('square')">Quadrate</button>
+            <button style="padding:6px 10px;font-size:12px;${cur.grid==='hex'?'background:var(--gold);color:var(--bg);':''}" onclick="setMapGridType('hex')">Hex</button>
           </div>
-        </div>`}
-        ${((cur.grid==='hex' && (n.terrain || n.settlement)) || (areasOn() && n.area)) ? `<span class="small-muted">${escapeHtml([cur.grid==='hex' ? terrainContextLabel({terrain:n.terrain, settlement:n.settlement}) : null, areasOn() && n.area ? 'Gebiet: '+n.area : ''].filter(Boolean).join(' · '))}</span>` : ''}
-        ${areasOn() && n.area && findTableByName(n.area)
-          ? `<button class="btn btn-gold" onclick="travelAndEncounter('${n.id}')">📍 Hierher reisen + 🎲 Begegnung</button>
-             <button class="btn btn-raised" onclick="setMarkerHere('${n.id}')">📍 Nur Marker hierher</button>`
-          : `${areasOn() && n.area ? `<p class="small-muted" style="margin:0;color:var(--wax);">Keine Tabelle „${escapeHtml(n.area)}“ gefunden.</p>` : ''}
-             <button class="btn btn-gold" onclick="setMarkerHere('${n.id}')">📍 Marker hierher</button>`}
-      </div>`;
-    }
+        </div>
+        ${cur.grid!=='none' ? `<div class="row" style="gap:8px;align-items:center;"><span class="small-muted">Größe</span><input type="range" min="24" max="64" value="${cur.gridSize}" oninput="onMapGridSizeInput(this)" onchange="onMapGridSizeInput(this,true)" style="flex:1;"></div>` : ''}
+        ${hexMode ? `<button class="btn btn-raised" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="addMapNode()">+ Hex</button>` : ''}
+      </div>
+    </details>
+    ${renderMapTablePicker(cur)}
+    <button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;align-self:flex-start;" onclick="deleteMap('${cur.id}')">Karte löschen</button>`;
+  return head(title, '', 'plain') + `<div class="map-side-body">${body}</div>`;
+}
+
+// Editing a hex / room: in the column (or sheet) next to the map, not as a
+// window over it – the map stays visible. Same form while playing and in edit mode.
+function renderMapNodeForm(cur, head){
+  const d = ui.mapNodeDraft, id = ui.editingMapNodeId;
+  const hexMode = cur.grid==='hex';
+  const body = `<div class="row" style="gap:8px;">
+      <input type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(d.num)}" oninput="ui.mapNodeDraft.num=this.value;" style="width:64px;" placeholder="Nr.">
+      <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="${hexMode ? 'Name des Hex' : 'Name des Raums'}" style="flex:1;min-width:0;">
+    </div>
+    <textarea class="grow-text" rows="5" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
+    ${hexMode ? `<span class="label">Gelände · ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
+    ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
+    <span class="label">Auf dem Hex</span>
+    ${renderSettlementChoice(d.settlement)}
+    <div class="row wrap" style="gap:6px;">
+      <button class="btn ${d.lake?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="ui.mapNodeDraft.lake=!ui.mapNodeDraft.lake; render();">${d.lake?'☑':'☐'} Lake</button>
+      ${mapNodeOnLine(cur, 'river', id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeLinesAtNode('river','${id}')">River hier entfernen</button>` : ''}
+      ${mapNodeOnLine(cur, 'road', id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeLinesAtNode('road','${id}')">Road hier entfernen</button>` : ''}
+    </div>` : `
+    <div class="row between"><span class="small-muted">Größe</span><span class="small-muted" id="mapNodeRVal">${d.r}</span></div>
+    <input type="range" min="10" max="40" value="${d.r}" oninput="ui.mapNodeDraft.r=this.value; document.getElementById('mapNodeRVal').textContent=this.value;">`}
+    ${areasOn() ? `<span class="label">Gebiet</span>
+    <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Begegnungstabelle, z.B. New Pictland">
+    ${areaDatalistHtml()}` : ''}`;
+  const acts = `<button class="btn btn-outline-wax" onclick="deleteMapNode('${id}')" title="${hexMode ? 'Hex' : 'Raum'} löschen">Löschen</button>
+    <button class="btn btn-raised" onclick="cancelMapNodeModal(); armMoveMapNode('${id}')">Verschieben</button>
+    <button class="btn btn-gold" style="margin-left:auto;" onclick="saveMapNode()">Speichern</button>`;
+  return head(`${hexMode ? 'Hex' : 'Raum'} bearbeiten`, 'cancelMapNodeModal()', 'plain')
+    + `<div class="map-side-body">${body}</div><div class="map-side-acts">${acts}</div>`;
+}
+
+// The phone layout: the map gets the height left on screen, so the page
+// doesn't scroll past it. (On the PC the pane gives it its height.)
+function sizeMapLayout(){
+  const el = document.querySelector('.map-layout');
+  if(!el) return;
+  if(el.closest('.desk')){ padMapForSheet(); return; }
+  const nav = document.querySelector('.navbar-bottom');
+  const navH = nav && getComputedStyle(nav).display!=='none' ? nav.offsetHeight : 0;
+  const top = el.getBoundingClientRect().top + window.scrollY;
+  const main = document.getElementById('main');
+  const below = Math.max(navH + 10, main ? parseFloat(getComputedStyle(main).paddingBottom)||0 : 0);
+  const h = Math.max(320, window.innerHeight - top - below);
+  document.documentElement.style.setProperty('--map-h', h+'px');
+  padMapForSheet();
+}
+// With a sheet over the map, the map gets room below so every hex can be
+// scrolled above the sheet.
+function padMapForSheet(){
+  const wrap = document.getElementById('map-wrap'), side = document.querySelector('.map-side');
+  if(!wrap) return;
+  const covers = side && getComputedStyle(side).position==='absolute' && getComputedStyle(side).display!=='none';
+  const pad = covers ? side.offsetHeight+'px' : '';
+  if(wrap.style.paddingBottom!==pad) wrap.style.paddingBottom = pad;
+}
+// A tapped hex that ends up under the sheet moves into the visible part.
+function revealMapNode(id){
+  const wrap = document.getElementById('map-wrap'), side = document.querySelector('.map-side');
+  const cur = getCurrentMap();
+  const n = cur && cur.nodes.find(x=>x.id===id);
+  if(!wrap || !side || !n || !mapDom) return;
+  if(getComputedStyle(side).position!=='absolute') return;   // column next to the map: nothing covers it
+  const svg = mapDom.svg, vb = svg.viewBox.baseVal;
+  const px = svg.clientWidth / vb.width;
+  const x = (n.x - vb.x) * px, y = (n.y - vb.y) * px;
+  const visibleH = wrap.clientHeight - side.offsetHeight;
+  if(y - wrap.scrollTop > visibleH - 30 || y - wrap.scrollTop < 20 || x - wrap.scrollLeft < 0 || x - wrap.scrollLeft > wrap.clientWidth){
+    wrap.scrollTo({left: Math.max(0, x - wrap.clientWidth/2), top: Math.max(0, y - visibleH/2), behavior:'smooth'});
   }
-  return html;
 }
 function setMapNodeDraftTerrain(id){ ui.mapNodeDraft.terrain = id==='__clear' ? null : id; render(); }
 function setMapNodeDraftSettlement(id){ ui.mapNodeDraft.settlement = (id==='__clear' || ui.mapNodeDraft.settlement===id) ? null : id; render(); }
@@ -948,46 +1002,6 @@ function renderSettlementChoice(current){
     return `<button onclick="setMapNodeDraftSettlement('${s.id}')" class="row" style="gap:6px;border-radius:8px;padding:2px 8px 2px 2px;border:2px solid ${on?'var(--gold)':'var(--border)'};background:${on?'var(--panel-raised)':'transparent'};color:var(--text);font-size:13px;">
       ${terrainSwatchSvg(s.id==='__clear' ? null : s.id, 28)}${escapeHtml(s.label)}</button>`;
   }).join('')}</div>`;
-}
-function renderMapNodeModal(){
-  const d = ui.mapNodeDraft, id = ui.editingMapNodeId;
-  const cur = getCurrentMap();
-  const hexMode = cur && cur.grid==='hex';
-  return `<div class="modal-overlay"><div class="modal-sheet">
-    <div class="row between"><span class="label" style="color:var(--gold);">${hexMode ? 'Hex' : 'Raum'} bearbeiten</span>
-      <button class="icon-btn" onclick="cancelMapNodeModal()">✕</button></div>
-    <div class="row" style="gap:8px;">
-      <input type="text" inputmode="numeric" pattern="[0-9]*" value="${escapeHtml(d.num)}" oninput="ui.mapNodeDraft.num=this.value;" style="width:72px;" placeholder="Nr.">
-      <input type="text" value="${escapeHtml(d.name)}" oninput="ui.mapNodeDraft.name=this.value;" placeholder="${hexMode ? 'Name des Hex' : 'Name des Raums'}" style="flex:1;">
-    </div>
-    <textarea class="grow-text" rows="4" placeholder="Beschreibung, Fallen, Inhalt…" oninput="ui.mapNodeDraft.desc=this.value;">${escapeHtml(d.desc)}</textarea>
-    ${hexMode ? `<span class="small-muted">Gelände: ${escapeHtml(d.terrain && TERRAIN_BY_ID[d.terrain] ? TERRAIN_BY_ID[d.terrain].label : 'keins')}</span>
-    ${renderTerrainPalette(d.terrain, 'setMapNodeDraftTerrain')}
-    <span class="small-muted">Siedlung (liegt auf dem Gelände):</span>
-    ${renderSettlementChoice(d.settlement)}
-    <div class="row wrap" style="gap:8px;">
-      <button class="btn ${d.lake?'btn-gold':'btn-raised'}" style="padding:6px 10px;font-size:12px;" onclick="ui.mapNodeDraft.lake=!ui.mapNodeDraft.lake; render();">${d.lake?'☑':'☐'} Lake</button>
-      ${mapNodeOnLine(cur, 'river', id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeLinesAtNode('river','${id}')">River hier entfernen</button>` : ''}
-      ${mapNodeOnLine(cur, 'road', id) ? `<button class="btn btn-outline-wax" style="padding:6px 10px;font-size:12px;" onclick="removeLinesAtNode('road','${id}')">Road hier entfernen</button>` : ''}
-    </div>` : ''}
-    ${areasOn() ? `<span class="small-muted">Gebiet (Begegnungstabelle, z.B. New Pictland):</span>
-    <input type="text" list="area-table-names" value="${escapeHtml(d.area||'')}" oninput="ui.mapNodeDraft.area=this.value;" placeholder="Gebiet…">
-    ${areaDatalistHtml()}` : ''}
-    ${hexMode ? `<p class="small-muted" style="margin:0;">Im Hex-Raster füllt jedes Hex immer eine ganze Zelle — die Größe folgt dem Raster-Schieberegler in der Kartenansicht.</p>` : `
-    <div class="row between">
-      <span class="small-muted">Größe</span>
-      <span class="small-muted" id="mapNodeRVal">${d.r}</span>
-    </div>
-    <input type="range" min="10" max="40" value="${d.r}" oninput="ui.mapNodeDraft.r=this.value; document.getElementById('mapNodeRVal').textContent=this.value;">`}
-    <div class="row wrap" style="gap:8px;">
-      <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelMapNodeModal(); armMoveMapNode('${id}')">↔ Verschieben</button>
-      <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelMapNodeModal(); setMarkerHere('${id}')">📍 Marker hierher</button>
-    </div>
-    <div class="row">
-      <button class="btn btn-outline-wax" onclick="deleteMapNode('${id}')">🗑 Löschen</button>
-      <button class="btn btn-gold" style="flex:1;" onclick="saveMapNode()">✓ Speichern</button>
-    </div>
-  </div></div>`;
 }
 function renderMapEdgeModal(){
   const d = ui.mapEdgeDraft;

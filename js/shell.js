@@ -180,6 +180,7 @@ function render(){
   }
   main.querySelectorAll('.modal-sheet, .modal-scroll').forEach((el,i)=>{ if(sheetY[i]) el.scrollTop = sheetY[i]; });
   main.querySelectorAll('[data-keep-scroll]').forEach(el=>{ const y = keptScroll[el.dataset.keepScroll]; if(y) el.scrollTop = y; });
+  sizeMapLayout();
   if(window.scrollY!==pageY) window.scrollTo(0, pageY);
 }
 // If the map panel is on screen and stays there, replace only the page parts
@@ -426,7 +427,6 @@ function renderModals(){
   if(ui.editingSectionId) html += renderSectionModal();
   if(ui.editingFieldId) html += renderFieldModal();
   if(ui.linkPicker) html += renderLinkPickerModal();
-  if(ui.editingMapNodeId) html += renderMapNodeModal();
   if(ui.editingMapEdgeId) html += renderMapEdgeModal();
   if(ui.editingRelationNodeId) html += renderRelationNodeModal();
   if(ui.editingRelationEdgeId) html += renderRelationEdgeModal();

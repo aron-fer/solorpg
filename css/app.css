@@ -258,3 +258,43 @@ textarea { resize:none; font-family: Georgia, serif; }
 .desk .dock-tables .table-row { min-width:0; gap:8px; }
 /* PC: the damage bar sits at the bottom of the Kampf pane, not across the screen. */
 .desk .battle-dmg-bar { position:sticky; bottom:-12px; left:auto; right:auto; margin:auto -12px -12px; z-index:3; }
+/* Karte: map and its column (wide) or sheet (narrow) share .map-layout;
+   its width decides which (container query). */
+.map-layout { container: maplayout / inline-size; position:relative; display:flex; height:var(--map-h, 70vh); min-height:320px; }
+.desk .desk-scroll > .map-layout { flex:1 1 auto; height:auto; min-height:320px; }
+.map-stage { flex:1; min-width:0; padding:0; position:relative; overflow:hidden; border-radius:10px; }
+.map-stage .map-svg-wrap { height:100% !important; min-height:0; border:none; border-radius:0; }
+.map-zoom { position:absolute; right:8px; bottom:8px; z-index:2; }
+.map-side { display:flex; flex-direction:column; min-height:0; background:var(--panel); border:1px solid var(--border); }
+.map-side-head { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.map-side-title { flex:1; min-width:0; font-size:17px; color:var(--gold); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.map-side-title.plain { color:var(--text); font-size:15px; }
+.map-side-body { flex:1; min-height:0; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
+.map-side-body > * { flex-shrink:0; }
+.map-side-meta { font-family:ui-monospace, monospace; font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-faint); line-height:1.5; }
+.map-side-text { white-space:pre-line; font-size:15px; line-height:1.5; color:var(--text); overflow-wrap:break-word; }
+.map-side-text.muted { color:var(--text-muted); font-size:14px; }
+.map-side-acts { display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px; border-top:1px solid var(--border); flex-shrink:0; }
+.map-side-acts .btn { padding:7px 12px; font-size:13px; }
+.map-tables { display:flex; flex-wrap:wrap; gap:6px; }
+.map-tables-head { width:100%; color:var(--gold-dim); margin-top:2px; }
+.map-roll-btn { padding:5px 10px; font-size:13px; }
+.map-edge-row { gap:6px; font-size:14px; border-bottom:1px solid var(--border); padding:2px 0; }
+.map-fold { border-top:1px solid var(--border); padding-top:8px; display:flex; flex-direction:column; gap:4px; }
+.map-fold > summary { cursor:pointer; }
+.map-grab { display:none; }
+/* Wide: column next to the map, always there. */
+@container maplayout (min-width: 640px) {
+  .map-side { width:320px; flex-shrink:0; border-radius:10px; margin-left:8px; }
+}
+/* Narrow: sheet from below over the map, only when there is something to show. */
+@container maplayout (max-width: 639.98px) {
+  .map-side { position:absolute; left:0; right:0; bottom:0; z-index:3; max-height:55%; border-radius:14px 14px 0 0; border-color:var(--gold-dim); box-shadow:0 -8px 20px rgba(0,0,0,0.55); }
+  .map-side.full { max-height:92%; height:92%; }
+  .map-side.idle { display:none; }
+  .map-side.tools { max-height:45%; }
+  .map-side.form { max-height:85%; }
+  .map-grab { display:block; width:44px; height:5px; border-radius:3px; background:var(--text-faint); margin:7px auto 1px; flex-shrink:0; }
+  .map-side-head { padding:4px 12px 8px; }
+  .map-zoom { bottom:auto; top:8px; }
+}

@@ -218,7 +218,7 @@ let ui = {
   tableChip:(()=>{ try{ return localStorage.getItem('solorpg-table-chip')||null; }catch(e){ return null; } })(), rollPopup:null, lastDice:{},
   folds:(()=>{ try{ return JSON.parse(localStorage.getItem('solorpg-folds')||'{}')||{}; }catch(e){ return {}; } })(),
   characterViewMode:(()=>{ try{ const v = localStorage.getItem('solorpg-character-view'); return ['full','statblock','quick'].includes(v) ? v : 'full'; }catch(e){ return 'full'; } })(),
-  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapEncounterResult:null, mapRolls:[], mapTablesOpen:false, mapPickerOpen:false, mapPickerGroups:[],
+  selectedMapNodeId:null, mapMoveArmedId:null, mapConnectFrom:null, mapPlayConnect:false, mapBrush:null, mapLineId:null, mapAreaBrush:'', mapSheet:null, mapSheetFull:false, mapSettingsOpen:false, mapPickerOpen:false, mapPickerGroups:[],
   editingMapId:null, mapNameDraft:'',
   editingMapNodeId:null, mapNodeDraft:null,
   editingMapEdgeId:null, mapEdgeDraft:null,
