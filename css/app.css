@@ -36,7 +36,7 @@ button { font-family: inherit; cursor:pointer; background:none; border:none; col
 .btn-gold { background:var(--gold); color:var(--bg); font-weight:600; }
 .btn-raised { background:var(--panel-raised); color:var(--gold); border:1px solid var(--gold-dim); }
 .btn-outline-wax { background:transparent; color:var(--wax); border:1px solid var(--wax); }
-input[type=text], input[type=number], input[type=search], textarea {
+input[type=text], input[type=number], input[type=search], input[type=password], textarea {
   width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border);
   border-radius:10px; padding:8px 10px; font-size:14px; outline:none;
 }
@@ -156,6 +156,11 @@ textarea { resize:none; font-family: Georgia, serif; }
 .g-chip.on { background:var(--gold); color:var(--bg); border-color:var(--gold); font-weight:600; }
 .g-chip small { opacity:0.7; margin-left:4px; }
 .g-sep { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gold); margin:8px 2px 0; }
+.sync-btn { position:relative; font-size:18px; }
+.sync-btn.unsaved::after { content:''; position:absolute; top:6px; right:5px; width:8px; height:8px; border-radius:50%; background:var(--gold); }
+.sync-banner { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-radius:10px; background:var(--panel-raised); border:1px solid var(--gold-dim); font-size:14px; }
+.sync-banner.warn { border-color:var(--wax); }
+.sync-banner .btn { padding:5px 10px; font-size:13px; }
 #file-import { display:none; }
 .link-chip { color:var(--gold); text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font:inherit; cursor:pointer; display:inline; }
 /* Character statblock */

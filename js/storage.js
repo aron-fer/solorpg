@@ -107,6 +107,7 @@ async function loadState(){
 }
 
 function saveState(){
+  if(typeof syncNoteChange==='function') syncNoteChange();
   if(saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = setTimeout(flushSave, 300);
 }

@@ -14,6 +14,7 @@ window.addEventListener('resize', function(){
 loadState().then(()=>loadTerrainImages()).then(()=>{
   startupBackup();
   render();
+  syncCheck(null, true);   // newer version saved on another device?
   requestPersistentStorage();
 });
 if('serviceWorker' in navigator){

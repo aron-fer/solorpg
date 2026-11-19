@@ -59,7 +59,15 @@ function closeOptions(){ ui.showOptions=false; render(); }
 // ---- Campaigns ----
 function openCampaignSwitcher(){ ui.showCampaignSwitcher=true; render(); }
 function closeCampaignSwitcher(){ ui.showCampaignSwitcher=false; render(); }
-function switchCampaign(id){ STATE.activeCampaignId=id; ui.showCampaignSwitcher=false; saveState(); render(); }
+function switchCampaign(id){
+  // Leaving a campaign with unsaved changes: save it to GitHub first (if it is saved there).
+  const prev = STATE.activeCampaignId;
+  if(typeof syncConfigured==='function' && syncConfigured() && syncChanged && prev!==id && syncCampState(prev) && syncCampState(prev).sha) syncSave(prev, {quiet:true});
+  STATE.activeCampaignId=id; ui.showCampaignSwitcher=false; saveState();
+  if(typeof syncChanged!=='undefined') syncChanged = false;
+  render();
+  if(typeof syncCheck==='function') syncCheck(id, true);
+}
 function addCampaign(){
   const newCamp = {id:uid(), name:`Kampagne ${STATE.campaigns.length+1}`};
   STATE.campaigns.push(newCamp);
@@ -269,11 +277,14 @@ function renderHeader(){
     </div>
     <div class="header-actions">
       ${getAllTabs().length>1 ? `<button class="icon-btn splitview-btn ${active.splitView?'active':''}" onclick="toggleSplitView()" title="Splitscreen (bis zu 4 Tabs nebeneinander)">⊞</button>` : ''}
+      ${renderSyncHeaderButton()}
       ${showGear ? `<button class="btn ${ui.managing?'btn-gold':'btn-raised'} edit-toggle" onclick="toggleManaging()">${ui.managing?'✓ Fertig':'✎ Bearbeiten'}</button>` : ''}
       <div style="position:relative;">
         <button class="icon-btn ${ui.headerMenuOpen?'active':''}" onclick="toggleHeaderMenu()" title="Menü" aria-label="Menü">⋯</button>
         ${ui.headerMenuOpen ? `<div class="menu-backdrop" onclick="toggleHeaderMenu()"></div>
         <div class="header-menu">
+          ${syncConfigured() ? `<button onclick="toggleHeaderMenu(); syncSave()">☁ Auf GitHub speichern</button>
+          <button onclick="toggleHeaderMenu(); openSyncList()">☁ Aus GitHub laden…</button>` : `<button onclick="toggleHeaderMenu(); openOptions()">☁ Speichern auf GitHub einrichten…</button>`}
           <button onclick="toggleHeaderMenu(); openOptions()">🛠 Optionen</button>
           <button onclick="toggleHeaderMenu(); exportData()">⬇ Kampagne exportieren</button>
           <button onclick="toggleHeaderMenu(); triggerImport()">⬆ Kampagne importieren</button>
@@ -281,6 +292,7 @@ function renderHeader(){
       </div>
     </div>
   </div>
+  ${renderSyncBanner()}
   ${ui.managing && showGear ? `<div class="edit-banner"><span>✎ Bearbeiten-Modus</span><button class="btn btn-gold" onclick="toggleManaging()">✓ Fertig</button></div>` : ''}
   ${saveError ? `<div class="panel" style="border-color:var(--wax);background:rgba(139,46,46,0.18);">
     <div class="row between wrap" style="gap:8px;">
@@ -344,6 +356,7 @@ function renderModals(){
   if(ui.editingTableId) html += renderTableModal();
   if(ui.showImport) html += renderImportModal();
   if(ui.rollPopup) html += renderRollPopup();
+  if(ui.sync && ui.sync.listOpen) html += renderSyncListModal();
   if(ui.editingComboId) html += renderComboModal();
   if(ui.editingKarteiEntry) html += renderKarteiEntryModal();
   if(ui.editingKarteiId) html += renderKarteiRenameModal();
@@ -419,6 +432,7 @@ function renderOptionsModal(){
         </button>
         <p class="small-muted" style="margin:0;">Aus: Gebiet-Pinsel, Gebiet-Feld und Begegnungs-Knöpfe sind ausgeblendet. Schon vergebene Gebiete bleiben gespeichert.</p>
       </div>
+      ${renderSyncOptions()}
       <div style="display:flex;flex-direction:column;gap:8px;">
         <span class="label">🗺️ Gelände-Grafiken</span>
         ${Object.keys(TERRAIN_IMAGES).length

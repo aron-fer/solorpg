@@ -23,6 +23,7 @@ const ASSETS = [
   'js/turns.js',
   'js/map.js',
   'js/relations.js',
+  'js/sync.js',
   'js/shell.js',
   'js/main.js',
 ];
