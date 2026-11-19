@@ -8,7 +8,7 @@ const bestiaryCache = new WeakMap();
 const SB_START = /(^|\n)[^\n]*?:?\s*#E\s/;   // colon is missing in a few book entries
 
 // Plural forms so "2d6 ape-men" or "1d4 gargoyles" find their monster;
-// "Donkey/Mule/Pony" also answers to each part, "Worm of Ymir" to "worms of Ymir".
+// "Donkey/Mule/Pony" also answers to each part ("Hunting/Sled Dog" to "hunting dog"), "Worm of Ymir" to "worms of Ymir".
 function pluralWord(w){
   if(/man$/.test(w)) return w.replace(/man$/,'men');
   if(/(mouse|louse)$/.test(w)) return w.replace(/ouse$/,'ice');
@@ -23,7 +23,14 @@ function bestiaryNameForms(name){
   const base = String(name).replace(/\s*\([^)]*\)\s*/g,' ').replace(/\s+/g,' ').trim().toLowerCase();
   if(!base) return [];
   const forms = new Set();
-  const parts = base.includes('/') ? [base, ...base.split('/').map(x=>x.trim()).filter(Boolean)] : [base];
+  // "Hunting/Sled Dog" means hunting dog and sled dog: a one-word part borrows
+  // the last part's head noun, so plain "hunting" in a text is no match.
+  let parts = [base];
+  if(base.includes('/')){
+    const split = base.split('/').map(x=>x.trim()).filter(Boolean);
+    const head = split[split.length-1].split(' ');
+    parts = [base, ...split.map(x=> head.length>1 && !x.includes(' ') ? x+' '+head[head.length-1] : x)];
+  }
   // "Class III Earth Elemental" → also "earth elemental"; "Adult Tree-Man" → also "tree-man".
   const cls = base.match(/^class [ivxlc]+ (.+)$/);
   if(cls) parts.push(cls[1]);
