@@ -174,7 +174,8 @@ function ensureCampaign(data){
   d.splitView = !!d.splitView;
   {
     const presentGroups = [];
-    d.tables.forEach(t=>{ if(t.group && !presentGroups.includes(t.group)) presentGroups.push(t.group); });
+    d.combos = (d.combos||[]).map(c=>({...c, tableIds: c.tableIds||[], fav: !!c.fav, group: c.group || ''}));
+    [...d.tables, ...d.combos].forEach(t=>{ if(t.group && !presentGroups.includes(t.group)) presentGroups.push(t.group); });
     let order = Array.isArray(d.groupOrder) ? d.groupOrder.filter(g=>presentGroups.includes(g)) : [];
     presentGroups.forEach(g=>{ if(!order.includes(g)) order.push(g); });
     d.groupOrder = order;

@@ -372,7 +372,7 @@ function deleteTableGroup(group){
   updateActive(camp=>({
     ...camp,
     tables: camp.tables.filter(t=>!ids.has(t.id)),
-    combos: camp.combos.map(c=>({...c, tableIds:c.tableIds.filter(tid=>!ids.has(tid))})),
+    combos: camp.combos.filter(c=>c.group!==group).map(c=>({...c, tableIds:c.tableIds.filter(tid=>!ids.has(tid))})),
     groupOrder: camp.groupOrder.filter(g=>g!==group),
   }));
   ui.confirmDeleteTableGroup = null;
@@ -516,14 +516,15 @@ function handleRollCombo(id){
   ui.rollPopup = {title:combo.name, text, again:`handleRollCombo('${combo.id}')`};
   render();
 }
-function startNewCombo(){ ui.editingComboId='new'; ui.comboDraft={name:'', tableIds:[]}; render(); }
+function startNewCombo(){ ui.editingComboId='new'; ui.comboDraft={name:'', tableIds:[], group:''}; render(); }
 function startEditCombo(id){
   const c = getActive().combos.find(c=>c.id===id);
-  ui.editingComboId=id; ui.comboDraft={name:c.name, tableIds:[...c.tableIds]};
+  ui.editingComboId=id; ui.comboDraft={name:c.name, tableIds:[...c.tableIds], group:c.group||''};
   render();
 }
 function cancelEditCombo(){ ui.editingComboId=null; render(); }
 function onComboDraftName(el){ ui.comboDraft.name = el.value; }
+function onComboDraftGroup(el){ ui.comboDraft.group = el.value; }
 function toggleComboTable(tid){
   const idx = ui.comboDraft.tableIds.indexOf(tid);
   if(idx>=0) ui.comboDraft.tableIds.splice(idx,1); else ui.comboDraft.tableIds.push(tid);
@@ -533,9 +534,12 @@ function saveCombo(){
   const name = ui.comboDraft.name.trim() || 'Unbenannte Kombi';
   updateActive(camp=>{
     const combos = [...camp.combos];
-    if(ui.editingComboId==='new'){ combos.push({id:uid(), name, tableIds:ui.comboDraft.tableIds}); }
-    else{ const idx = combos.findIndex(c=>c.id===ui.editingComboId); combos[idx] = {...combos[idx], name, tableIds:ui.comboDraft.tableIds}; }
-    return {...camp, combos};
+    const group = (ui.comboDraft.group||'').trim();
+    if(ui.editingComboId==='new'){ combos.push({id:uid(), name, tableIds:ui.comboDraft.tableIds, group, fav:false}); }
+    else{ const idx = combos.findIndex(c=>c.id===ui.editingComboId); combos[idx] = {...combos[idx], name, tableIds:ui.comboDraft.tableIds, group}; }
+    const groupOrder = [...camp.groupOrder];
+    if(group && !groupOrder.includes(group)) groupOrder.push(group);
+    return {...camp, combos, groupOrder};
   });
   ui.editingComboId=null; saveState(); render();
 }
@@ -544,39 +548,59 @@ function deleteCombo(id){
   ui.editingComboId=null; saveState(); render();
 }
 
+// Result cards, newest first: the rolled table as heading, the result below,
+// time at the bottom. Tap = copy.
+function renderLogCards(ctx, log){
+  if(log.length===0) return `<p class="small-muted" style="text-align:center;padding:12px 0;">Noch nichts gewürfelt. Ergebnisse erscheinen hier, neuestes zuerst.</p>`;
+  return log.map((entry, idx)=>{
+    const body = entry.title ? rollPopupBody(entry.text, entry.title) : entry.text;
+    return `<div class="log-card ${idx===0?'latest':''}" onclick="copyLogEntry('${ctx}',${idx},event)" title="Antippen = kopieren">
+      ${entry.title ? `<div class="log-card-title">${escapeHtml(entry.title)}</div>` : ''}
+      <div class="log-card-body">${escapeHtml(body)}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</div>
+      <div class="log-card-time">${entry.time}</div>
+    </div>`;
+  }).join('');
+}
+function renderLogClearControls(ctx, log){
+  if(!log.length) return '';
+  return ui.confirmClear[ctx]
+    ? `<div class="row" style="gap:6px;">
+         <button class="btn" style="background:var(--wax);color:var(--text);padding:4px 8px;font-size:12px;" onclick="clearLog('${ctx}')">Leeren</button>
+         <button class="btn" style="background:var(--panel-raised);color:var(--text-muted);padding:4px 8px;font-size:12px;" onclick="clearLogCancel('${ctx}')">Abbrechen</button>
+       </div>`
+    : `<button class="icon-btn" onclick="clearLogConfirm('${ctx}')" title="Verlauf leeren">↺</button>`;
+}
 function renderResultsPanel(spanClass, ctx, foldKey){
   ctx = ctx || 'oracle';
   const active = getActive();
   const log = ctx==='battle' ? active.battleLog : active.log;
-  let logHtml;
-  if(log.length===0){
-    logHtml = `<p class="small-muted" style="text-align:center;padding:12px 0;">Noch nichts gewürfelt. Ergebnisse erscheinen hier, neuestes zuerst.</p>`;
-  } else {
-    // In the battle tab the log stays short (about two entries, scrollable) so party and enemies sit higher.
-    logHtml = `<div id="results-log-scroll-${ctx}" style="display:flex;flex-direction:column;gap:8px;max-height:${ctx==='battle' ? 120 : 360}px;overflow-y:auto;">`
-      + log.map((entry, idx)=>{
-          // Card: the rolled table as heading, the result below, time at the bottom. Tap = copy.
-          const body = entry.title ? rollPopupBody(entry.text, entry.title) : entry.text;
-          return `<div class="log-card ${idx===0?'latest':''}" onclick="copyLogEntry('${ctx}',${idx},event)" title="Antippen = kopieren">
-            ${entry.title ? `<div class="log-card-title">${escapeHtml(entry.title)}</div>` : ''}
-            <div class="log-card-body">${escapeHtml(body)}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</div>
-            <div class="log-card-time">${entry.time}</div>
-          </div>`;
-        }).join('')
-      + `</div>`;
-  }
-  const clearControls = log.length>0
-    ? (ui.confirmClear[ctx]
-        ? `<div class="row" style="gap:6px;">
-             <button class="btn" style="background:var(--wax);color:var(--text);padding:4px 8px;font-size:12px;" onclick="clearLog('${ctx}')">Leeren</button>
-             <button class="btn" style="background:var(--panel-raised);color:var(--text-muted);padding:4px 8px;font-size:12px;" onclick="clearLogCancel('${ctx}')">Abbrechen</button>
-           </div>`
-        : `<button class="icon-btn" onclick="clearLogConfirm('${ctx}')" title="Verlauf leeren">↺</button>`)
-    : '';
+  // In the battle tab the log stays short (about two entries, scrollable) so party and enemies sit higher.
+  const logHtml = log.length
+    ? `<div id="results-log-scroll-${ctx}" style="display:flex;flex-direction:column;gap:8px;max-height:${ctx==='battle' ? 120 : 360}px;overflow-y:auto;">${renderLogCards(ctx, log)}</div>`
+    : renderLogCards(ctx, log);
   if(foldKey && isFolded(foldKey, true)) return `<div class="panel ${spanClass||''}">${foldHeader(foldKey, true, 'Ergebnisse', log.length ? String(log.length) : '')}</div>`;
   return `<div class="panel ${spanClass||''}">
-    <div class="row between">${foldKey ? foldHeader(foldKey, true, 'Ergebnisse') : '<span class="label">Ergebnisse</span>'}${clearControls}</div>
+    <div class="row between">${foldKey ? foldHeader(foldKey, true, 'Ergebnisse') : '<span class="label">Ergebnisse</span>'}${renderLogClearControls(ctx, log)}</div>
     ${logHtml}
+  </div>`;
+}
+// PC: the oracle docked on the left – the table list, and next to it the
+// dice with every result right below them.
+function renderOracleDock(){
+  const active = getActive();
+  const formulaVal = ui.formulaOracle;
+  return `<div class="desk-col dock-tables">${renderTablesHead('desk-hd dock-tables-hd')}<div class="desk-scroll" data-keep-scroll="dock-tables">${renderTablesBlock(true)}</div></div>
+  <div class="desk-col dock-results">
+    <div class="desk-hd"><span class="label" style="color:var(--gold);">Würfeln &amp; Ergebnisse</span>${renderLogClearControls('oracle', active.log)}</div>
+    <div class="dock-dice">
+      <div class="dock-dice-row">${active.oracleDice.map(d=>`<button class="die-btn" onclick="handleOracleRoll('${d.id}','oracle')">${escapeHtml(d.name)}</button>`).join('')}</div>
+      <div class="row" style="gap:6px;">
+        <input type="text" value="${escapeHtml(formulaVal)}" placeholder="z.B. 2W6+1" oninput="onFormulaInput(this,'oracle')" onkeydown="onFormulaKeydown(event,'oracle')" style="flex:1;min-width:0;">
+        <button class="btn btn-gold" onclick="handleFormula('oracle')">Würfeln</button>
+      </div>
+    </div>
+    ${renderPositionPanel('desk-position')}
+    <div class="desk-scroll dock-log" data-keep-scroll="dock-log">${renderLogCards('oracle', active.log)}</div>
   </div>`;
 }
 
@@ -692,10 +716,10 @@ function clearTableQuery(){ ui.tableQuery = ''; render(); }
 function renderComboRow(c){
   return `<div class="row" style="gap:8px;">
     <button class="fav-btn ${c.fav?'on':''}" onclick="toggleComboFav('${c.id}')" title="${c.fav?'Nicht mehr oben anzeigen':'Oben anzeigen'}" aria-label="Favorit">${c.fav?'★':'☆'}</button>
-    <button class="combo-row row between" style="flex:1;color:var(--text);text-align:left;" onclick="handleRollCombo('${c.id}')">
-      <span>🧩 ${escapeHtml(c.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${c.tableIds.length} Tabellen</span>
+    <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;" onclick="handleRollCombo('${c.id}')" title="Kombination: würfelt ${c.tableIds.length} Tabellen auf einmal">
+      <span>${escapeHtml(c.name)}</span><span class="small-muted combo-badge">🧩 ${c.tableIds.length}</span>
     </button>
-    ${ui.managing ? `<button class="icon-btn raised" onclick="startEditCombo('${c.id}')">✎</button>` : ''}
+    ${ui.managing ? `<span class="row row-tools"><button class="icon-btn raised" onclick="startEditCombo('${c.id}')">✎</button></span>` : ''}
   </div>`;
 }
 function toggleComboFav(id){
@@ -727,9 +751,9 @@ function renderTableListHtml(){
       <button class="table-row row between" style="flex:1;color:var(--text);text-align:left;${selected?'border-color:var(--gold);background:var(--gold-dim);':''}" onclick="${ui.tableSelectMode?`toggleTableSelected('${t.id}')`:`handleRollTable('${t.id}')`}">
         <span>${escapeHtml(t.name)}</span><span class="small-muted" style="font-family:ui-monospace,monospace;">${t.mode==='aspects' ? `${(t.aspects||[]).length} Aspekte` : `${t.entries.length} Einträge`}</span>
       </button>
-      ${(ui.managing && !ui.tableSelectMode) ? `${noMove ? '' : `<button class="icon-btn raised" style="${idxInGroup===0?'opacity:0.3;':''}" ${idxInGroup===0?'disabled':''} onclick="moveTable('${t.id}',-1)">↑</button>
+      ${(ui.managing && !ui.tableSelectMode) ? `<span class="row row-tools" style="gap:4px;">${noMove ? '' : `<button class="icon-btn raised" style="${idxInGroup===0?'opacity:0.3;':''}" ${idxInGroup===0?'disabled':''} onclick="moveTable('${t.id}',-1)">↑</button>
       <button class="icon-btn raised" style="${idxInGroup===groupLen-1?'opacity:0.3;':''}" ${idxInGroup===groupLen-1?'disabled':''} onclick="moveTable('${t.id}',1)">↓</button>`}
-      <button class="icon-btn raised" onclick="startEditTable('${t.id}')">✎</button>` : ''}
+      <button class="icon-btn raised" onclick="startEditTable('${t.id}')">✎</button></span>` : ''}
     </div>`;
   };
   const q = (ui.tableQuery||'').trim().toLowerCase();
@@ -744,23 +768,29 @@ function renderTableListHtml(){
   // While playing, helper tables stay out of the list.
   const visible = (ui.managing || ui.tableSelectMode) ? active.tables : active.tables.filter(t=>!isHelperTable(t.name));
   const hiddenCount = active.tables.length - visible.length;
+  // Combinations sit in the list like tables: in their group, first in it.
+  // Select mode is for tables only.
+  const combos = ui.tableSelectMode ? [] : active.combos;
+  const inGroup = g => combos.filter(c=>(c.group||'')===g && !c.fav).map(renderComboRow).join('')
+    + visible.filter(t=>(t.group||'')===g && !t.fav).map((t,idx,arr)=>renderTableRow(t, idx, arr.length)).join('');
+  const groupCount = g => combos.filter(c=>(c.group||'')===g && !c.fav).length + visible.filter(t=>t.group===g && !t.fav).length;
   // Favourites (★) sit at the very top, outside their group – visible even when it is folded.
   const favs = visible.filter(t=>t.fav);
-  const ungrouped = visible.filter(t=>!t.group && !t.fav);
-  const groupNames = active.groupOrder.filter(g=>visible.some(t=>t.group===g && !t.fav));
-  let html = favs.map((t,idx)=>renderTableRow(t, idx, favs.length, true)).join('')
-    + (ui.tableSelectMode ? '' : active.combos.filter(c=>c.fav).map(renderComboRow).join(''))
-    + ungrouped.map((t,idx)=>renderTableRow(t, idx, ungrouped.length)).join('');
-  // While playing, groups are chips in one row: [Alle] [Dungeon] [Triple O] …
-  // One group (or all) is shown below the favourites; edit mode keeps the foldable groups.
-  if(!ui.managing && !ui.tableSelectMode){
+  const groupNames = active.groupOrder.filter(g=>groupCount(g)>0);
+  let html = combos.filter(c=>c.fav).map(renderComboRow).join('')
+    + favs.map((t,idx)=>renderTableRow(t, idx, favs.length, true)).join('')
+    + inGroup('');
+  const hiddenNote = hiddenCount ? `<p class="small-muted" style="margin:6px 0 0;">${hiddenCount} Untertabellen (z.B. „Hills: ANIMAL 1“, „Special: …“) ausgeblendet – die Suche findet sie, im Bearbeiten-Modus erscheinen sie wieder.</p>` : '';
+  // Phone, while playing: groups are chips in one row: [Alle] [Dungeon] [Triple O] …
+  // One group (or all) is shown below the favourites. On the PC (docked oracle)
+  // and in edit mode the groups are foldable sections instead.
+  if(!ui.managing && !ui.tableSelectMode && !isDesk()){
     const sel = ui.tableChip==='__all' || groupNames.includes(ui.tableChip) ? ui.tableChip : null;
     const chip = (val, label, n) => `<button class="g-chip ${sel===val?'on':''}" onclick="setTableChip(${jsStr(val)})">${escapeHtml(label)}${n!=null ? `<small>${n}</small>` : ''}</button>`;
-    const chips = groupNames.length ? `<div class="g-chips">${chip('__all','Alle')}${groupNames.map(g=>chip(g, g, visible.filter(t=>t.group===g && !t.fav).length)).join('')}</div>` : '';
-    const groupBlock = g => `<div class="g-sep">${escapeHtml(g)}</div>` + visible.filter(t=>t.group===g && !t.fav).map((t,idx,arr)=>renderTableRow(t, idx, arr.length)).join('');
+    const chips = groupNames.length ? `<div class="g-chips">${chip('__all','Alle')}${groupNames.map(g=>chip(g, g, groupCount(g))).join('')}</div>` : '';
+    const groupBlock = g => `<div class="g-sep">${escapeHtml(g)}</div>` + inGroup(g);
     const shown = sel==='__all' ? groupNames.map(groupBlock).join('') : sel ? groupBlock(sel) : '';
-    return chips + html + shown
-      + (hiddenCount ? `<p class="small-muted" style="margin:6px 0 0;">${hiddenCount} Untertabellen (z.B. „Hills: ANIMAL 1“, „Special: …“) ausgeblendet – die Suche findet sie, im Bearbeiten-Modus (⚙) erscheinen sie wieder.</p>` : '');
+    return chips + html + shown + hiddenNote;
   }
   html += groupNames.map((g,gIdx)=>{
     const members = visible.filter(t=>t.group===g && !t.fav);
@@ -771,41 +801,43 @@ function renderTableListHtml(){
       : '';
     const confirming = ui.confirmDeleteTableGroup===g;
     return `<div class="table-group">
-      <div class="row between" style="gap:8px;">
+      <div class="row between group-head" style="gap:8px;">
         ${groupCheck}
-        <button class="row" style="flex:1;background:none;border:none;color:var(--text);padding:4px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
+        <button class="row" style="flex:1;min-width:0;background:none;border:none;color:var(--text);padding:4px 2px;cursor:pointer;gap:6px;" onclick="toggleTableGroup(${jsStr(g)})">
           <span class="label" style="color:var(--gold);">${collapsed?'▶':'▼'} ${escapeHtml(g)}</span>
-          <span class="small-muted">${ui.tableSelectMode && nSel ? nSel+' / ' : ''}${members.length}</span>
+          <span class="small-muted">${ui.tableSelectMode && nSel ? nSel+' / ' : ''}${groupCount(g)}</span>
         </button>
-        ${ui.managing && !ui.tableSelectMode ? `<div class="row" style="gap:4px;">
+        ${ui.managing && !ui.tableSelectMode ? `<div class="row row-tools" style="gap:4px;">
           <button class="icon-btn raised" style="${gIdx===0?'opacity:0.3;':''}" ${gIdx===0?'disabled':''} onclick="moveGroup(${jsStr(g)},-1)">↑</button>
           <button class="icon-btn raised" style="${gIdx===groupNames.length-1?'opacity:0.3;':''}" ${gIdx===groupNames.length-1?'disabled':''} onclick="moveGroup(${jsStr(g)},1)">↓</button>
           <button class="icon-btn raised" style="color:var(--wax);" title="Ganze Gruppe löschen" onclick="askDeleteTableGroup(${jsStr(g)})">🗑</button>
         </div>` : ''}
       </div>
       ${confirming ? `<div class="row wrap" style="gap:6px;padding:4px 0 6px;">
-        <span class="small-muted" style="flex:1;min-width:160px;">Alle ${members.length} Tabellen in „${escapeHtml(g)}“ löschen? (Vorher wird automatisch gesichert.)</span>
+        <span class="small-muted" style="flex:1;min-width:160px;">Alle ${groupCount(g)} Tabellen/Kombis in „${escapeHtml(g)}“ löschen? (Vorher wird automatisch gesichert.)</span>
         <button class="btn" style="background:var(--wax);color:var(--text);padding:6px 10px;font-size:12px;" onclick="deleteTableGroup(${jsStr(g)})">Gruppe löschen</button>
         <button class="btn btn-raised" style="padding:6px 10px;font-size:12px;" onclick="cancelDeleteTableGroup()">Abbrechen</button>
       </div>` : ''}
-      ${collapsed ? '' : `<div class="table-rows">${members.map((t,idx)=>renderTableRow(t, idx, members.length)).join('')}</div>`}
+      ${collapsed ? '' : `<div class="table-rows">${inGroup(g)}</div>`}
     </div>`;
   }).join('');
-  if(hiddenCount) html += `<p class="small-muted" style="margin:6px 0 0;">${hiddenCount} Untertabellen (z.B. „Hills: ANIMAL 1“, „Special: …“) ausgeblendet – die Suche findet sie, im Bearbeiten-Modus (⚙) erscheinen sie wieder.</p>`;
-  return html;
+  return html + hiddenNote;
 }
-function renderDiceTab(){
+// Heading of the table list, with the tools of edit mode.
+function renderTablesHead(cls){
   const active = getActive();
-  // Order: dice, tables, combinations; position and results come last, folded by default.
-  let html = `<div class="grid-cards">`;
-  html += renderDiceRollerPanel('oracle', 'oracle-dice');
-
-  html += `<div class="panel"><div class="row between"><span class="label">Tabellen</span>
+  return `<div class="row between ${cls||''}"><span class="label">Tabellen</span>
     ${ui.managing ? `<div class="row" style="gap:6px;">
       <button class="btn ${ui.tableSelectMode?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleTableSelectMode()">${ui.tableSelectMode?'✕ Auswahl beenden':'☑ Auswählen'}</button>
       <button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="startImport()">Import</button>
+      ${active.tables.length ? `<button class="btn btn-raised" style="padding:4px 8px;font-size:12px;" onclick="startNewCombo()" title="Neue Kombination: würfelt mehrere Tabellen auf einmal">+ Kombi</button>` : ''}
       <button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="startNewTable()">+ Neu</button>
     </div>` : ''}</div>`;
+}
+// Table list with its search and edit tools (Orakel tab, and the docked oracle on the PC).
+function renderTablesBlock(withoutHead){
+  const active = getActive();
+  let html = withoutHead ? '' : renderTablesHead();
   if(active.tables.length===0){
     html += `<div class="empty"><span>Noch keine Tabellen angelegt.</span>
       <button class="btn btn-raised" onclick="startNewTable()">+ Erste Tabelle anlegen</button></div>`;
@@ -830,7 +862,7 @@ function renderDiceTab(){
         </div>
       </div>`;
     }
-    html += `<div class="row" style="gap:6px;margin:2px 0 4px;">
+    html += `<div class="row table-search" style="gap:6px;margin:2px 0 4px;">
       <input type="search" value="${escapeHtml(ui.tableQuery||'')}" placeholder="🔍 Tabelle suchen…" oninput="onTableQuery(this)" style="flex:1;min-width:0;">
       ${ui.tableQuery ? `<button class="icon-btn raised" title="Suche leeren" onclick="clearTableQuery()">✕</button>` : ''}
     </div>
@@ -839,19 +871,15 @@ function renderDiceTab(){
   if(ui.managing && active.tables.length>0){
     html += `<p class="small-muted">Tipp: Ein Eintrag mehrfach eintragen erhöht seine Wahrscheinlichkeit (im Modus „Gleich wahrscheinlich"). <code style="color:var(--gold);">{{Tabelle}}</code> im Text setzt einen Wurf inline ein, <code style="color:var(--gold);">{{A|B|C}}</code> wählt zufällig eins davon, <code style="color:var(--gold);">{{25%: Text}}</code> zeigt den Text mit 25 % Chance, „Verknüpfte Tabellen" hängt einen kompletten Zusatz-Wurf an.</p>`;
   }
-  html += `</div>`;
+  return html;
+}
+function renderDiceTab(){
+  const active = getActive();
+  // Order: dice, tables, combinations; position and results come last, folded by default.
+  let html = `<div class="grid-cards">`;
+  html += renderDiceRollerPanel('oracle', 'oracle-dice');
 
-  html += `<div class="panel"><div class="row between"><span class="label">🧩 Kombinationen</span>
-    ${(ui.managing && active.tables.length>0) ? `<button class="btn btn-gold" style="padding:4px 8px;font-size:12px;" onclick="startNewCombo()">+ Neu</button>` : ''}</div>`;
-  if(active.tables.length===0){
-    html += `<p class="small-muted" style="text-align:center;">Erst Tabellen anlegen, dann lassen sich mehrere zu einer Kombi zusammenfassen.</p>`;
-  } else if(active.combos.length===0){
-    html += `<div class="empty"><span>Noch keine Kombination angelegt.</span>
-      <button class="btn btn-raised" onclick="startNewCombo()">+ Erste Kombi anlegen</button></div>`;
-  } else {
-    html += `<div class="table-rows">${active.combos.map(renderComboRow).join('')}</div>`;
-  }
-  html += `</div>`;
+  html += `<div class="panel">${renderTablesBlock()}</div>`;
   html += renderPositionPanel('oracle-position');
   html += renderResultsPanel('span-all', 'oracle', 'oracle-results');
   html += `</div>`;
@@ -1011,7 +1039,9 @@ function renderComboModal(){
     <div class="row between"><span class="label" style="color:var(--gold);">${isNew?'Neue Kombi':'Kombi bearbeiten'}</span>
       <button class="icon-btn" onclick="cancelEditCombo()">✕</button></div>
     <input type="text" value="${escapeHtml(ui.comboDraft.name)}" placeholder="Name der Kombination" oninput="onComboDraftName(this)">
-    <span class="small-muted">Tabellen auswählen:</span>
+    <input type="text" value="${escapeHtml(ui.comboDraft.group||'')}" placeholder="Gruppe (optional, z.B. „Triple O“)" oninput="onComboDraftGroup(this)" list="combo-group-options">
+    <datalist id="combo-group-options">${active.groupOrder.map(g=>`<option value="${escapeHtml(g)}">`).join('')}</datalist>
+    <span class="small-muted">Steht in der Tabellenliste in dieser Gruppe (ohne Gruppe: oben). Tabellen auswählen:</span>
     <div style="display:flex;flex-direction:column;gap:6px;max-height:224px;overflow-y:auto;">
       ${active.tables.map(t=>{
         const checked = ui.comboDraft.tableIds.includes(t.id);

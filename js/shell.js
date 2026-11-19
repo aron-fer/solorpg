@@ -148,6 +148,7 @@ function handleImportFile(input){
 
 // ---- Rendering ----
 function render(){
+  if(isDesk()) deskSync();   // the sidebar marks what the panes show
   document.getElementById('sidebar').innerHTML = renderNav(true);
   const nav = document.getElementById('bottomnav');
   const navScroll = nav.scrollLeft;
@@ -159,10 +160,15 @@ function render(){
     if(act.offsetLeft < nav.scrollLeft) nav.scrollLeft = act.offsetLeft;
     else if(act.offsetLeft + act.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = act.offsetLeft + act.offsetWidth - nav.clientWidth;
   }
-  const active = getActive();
-  const body = (active.splitView && window.innerWidth>=900) ? renderSplitView() : renderActiveTab();
+  const desk = isDesk();
+  const body = desk ? renderDesk() : renderActiveTab();
   const main = document.getElementById('main');
+  main.classList.toggle('desk', desk);
+  document.body.classList.toggle('desk-body', desk);
   const html = renderHeader() + body + renderModals();
+  // Columns and panes on the PC scroll on their own: keep where they were.
+  const keptScroll = {};
+  main.querySelectorAll('[data-keep-scroll]').forEach(el=>{ keptScroll[el.dataset.keepScroll] = el.scrollTop; });
   // Replacing the HTML resets scroll positions: keep the page's and those of
   // open sheets (e.g. Optionen), so toggling something doesn't jump to the top.
   const pageY = window.scrollY;
@@ -173,25 +179,42 @@ function render(){
     restoreZoomViews();
   }
   main.querySelectorAll('.modal-sheet, .modal-scroll').forEach((el,i)=>{ if(sheetY[i]) el.scrollTop = sheetY[i]; });
+  main.querySelectorAll('[data-keep-scroll]').forEach(el=>{ const y = keptScroll[el.dataset.keepScroll]; if(y) el.scrollTop = y; });
   if(window.scrollY!==pageY) window.scrollTo(0, pageY);
 }
 // If the map panel is on screen and stays there, replace only the page parts
 // around it. Taking a map with thousands of hexes out of the page and back
 // makes the browser restyle all of them; leaving it in place avoids that
-// (and keeps its scroll position for free). Returns false if not applicable.
+// (and keeps its scroll position for free). On the PC the map sits inside a
+// pane: the same is done on every level up to #main, as long as the nesting
+// is the same. Returns false if not applicable.
 function patchAroundMapPanel(main, html){
   const live = document.getElementById('map-panel');
-  if(!live || live.parentNode!==main) return false;
+  if(!live || !main.contains(live)) return false;
   const tpl = document.createElement('div');
   tpl.innerHTML = html;
   const fresh = tpl.querySelector('#map-panel');
-  if(!fresh || fresh.parentNode!==tpl) return false;
-  const before = [], after = [];
-  let seen = false;
-  [...tpl.childNodes].forEach(n=>{ if(n===fresh){ seen = true; return; } (seen ? after : before).push(n); });
-  [...main.childNodes].forEach(n=>{ if(n!==live) n.remove(); });
-  live.before(...before);
-  live.after(...after);
+  if(!fresh) return false;
+  const chain = (el, root) => { const out = []; while(el && el!==root){ out.push(el); el = el.parentNode; } return el ? out : null; };
+  const lc = chain(live, main), fc = chain(fresh, tpl);
+  if(!lc || !fc || lc.length!==fc.length) return false;
+  for(let i=1; i<lc.length; i++){
+    if(lc[i].tagName!==fc[i].tagName || lc[i].className!==fc[i].className) return false;
+  }
+  for(let i=0; i<lc.length; i++){
+    const lNode = lc[i], fNode = fc[i];
+    const lParent = lc[i+1] || main, fParent = fc[i+1] || tpl;
+    const before = [], after = [];
+    let seen = false;
+    [...fParent.childNodes].forEach(n=>{ if(n===fNode){ seen = true; return; } (seen ? after : before).push(n); });
+    [...lParent.childNodes].forEach(n=>{ if(n!==lNode) n.remove(); });
+    lNode.before(...before);
+    lNode.after(...after);
+    if(lParent!==main){
+      [...lParent.attributes].forEach(at=>{ if(!fParent.hasAttribute(at.name)) lParent.removeAttribute(at.name); });
+      [...fParent.attributes].forEach(at=>{ if(lParent.getAttribute(at.name)!==at.value) lParent.setAttribute(at.name, at.value); });
+    }
+  }
   mountMapSvg();
   return true;
 }
@@ -200,6 +223,10 @@ function renderNav(isSidebar){
   const active = getActive();
   const tabs = getAllTabs();
   const karteiIds = new Set(active.karteien.map(k=>k.id));
+  // PC: tabs shown in a pane are marked; the oracle is marked while docked.
+  const desk = isDesk();
+  const shown = desk ? deskPanes() : null;
+  const isOn = id => desk ? (id==='dice' ? deskDockOpen() : shown.includes(id)) : ui.activeTab===id;
   const navBtn = (onclick, icon, label, isActive, isPinned) => `<button class="${isActive?'active':''}" style="${isPinned?'position:relative;':''}" onclick="${onclick}"><span class="nav-icon">${icon}</span><span class="nav-label">${label}${isPinned?' 📌':''}</span></button>`;
   // All Karteien share one tab ("Karteien"), placed where the first Kartei sits in the tab order.
   let karteienDone = false;
@@ -207,13 +234,10 @@ function renderNav(isSidebar){
     if(karteiIds.has(t.id)){
       if(karteienDone) return '';
       karteienDone = true;
-      const isPinned = active.splitView && active.pinnedTabs.some(id=>karteiIds.has(id));
-      const isActive = !active.splitView && karteiIds.has(ui.activeTab);
-      return navBtn('openKarteienTab()', '🗂️', 'Karteien', isActive, isPinned);
+      const isActive = desk ? shown.some(id=>karteiIds.has(id)) : karteiIds.has(ui.activeTab);
+      return navBtn('openKarteienTab()', '🗂️', 'Karteien', isActive, false);
     }
-    const isPinned = active.splitView && active.pinnedTabs.includes(t.id);
-    const isActive = !active.splitView && ui.activeTab===t.id;
-    return navBtn(`setActiveTab('${t.id}')`, t.icon, t.label, isActive, isPinned);
+    return navBtn(`setActiveTab('${t.id}')`, t.icon, t.label, isOn(t.id), false);
   }).join('')
     + (karteienDone ? '' : navBtn('addKartei()', '➕', 'Kartei', false, false));
   if(isSidebar){ return `<div class="brand-badge" style="margin-bottom:16px;">🎲</div>${tabsHtml}`; }
@@ -222,38 +246,98 @@ function renderNav(isSidebar){
 // The Karteien tab opens the Kartei used last (else the first one).
 function openKarteienTab(){
   const ks = getAllTabs().filter(t=>!t.special);
-  const id = ks.some(t=>t.id===ui.lastKarteiId) ? ui.lastKarteiId : (ks[0] && ks[0].id);
+  // PC: a Kartei already open in a pane just gets the focus.
+  const open = isDesk() && deskPanes().find(id=>ks.some(t=>t.id===id));
+  const id = open || (ks.some(t=>t.id===ui.lastKarteiId) ? ui.lastKarteiId : (ks[0] && ks[0].id));
   if(id) setActiveTab(id);
 }
-// Switching Kartei via the pills; in split view the pane keeps its place.
+// Switching Kartei via the pills; on the PC it replaces the Kartei in its pane.
 function selectKartei(id, fromId){
-  const active = getActive();
   ui.lastKarteiId = id;
-  if(active.splitView && window.innerWidth>=900 && fromId && active.pinnedTabs.includes(fromId)){
-    updateActive(camp=>({...camp, pinnedTabs: camp.pinnedTabs.map(x=>x===fromId ? id : x)}));
-    saveState(); render(); return;
-  }
+  if(isDesk() && fromId){ const i = deskPanes().indexOf(fromId); if(i>=0) ui.deskFocus = i; }
   ui.activeTab = id; render();
 }
 function setActiveTab(id){
-  const active = getActive();
-  if(active.splitView && window.innerWidth>=900){ togglePinTab(id); return; }
+  // PC: the oracle is docked; its button folds the dock in and out.
+  if(isDesk() && id==='dice'){ toggleDeskDock(); return; }
   ui.activeTab=id; render();
 }
-function toggleSplitView(){
-  updateActive(camp=>({...camp, splitView: !camp.splitView}));
-  saveState(); render();
+
+// ---- PC workspace: oracle docked on the left, 1 or 2 panes on the right ----
+// The panes show what ui.activeTab names: opening a tab (sidebar, a link, …)
+// puts it into the pane with the focus, unless it is open already. Layout
+// choices belong to this device, not to the campaign.
+const DESK_MIN_WIDTH = 1100;
+function isDesk(){ return window.innerWidth >= DESK_MIN_WIDTH; }
+let deskPrefsCache = null;
+function deskPrefs(){
+  if(!deskPrefsCache){
+    let p = {};
+    try{ p = JSON.parse(localStorage.getItem('solorpg-desk') || '{}') || {}; }catch(e){}
+    deskPrefsCache = {panes: Array.isArray(p.panes) ? p.panes : [], two: p.two!==false, dock: p.dock!==false};
+  }
+  return deskPrefsCache;
 }
-function togglePinTab(id){
-  updateActive(camp=>{
-    const pinned = [...camp.pinnedTabs];
-    const idx = pinned.indexOf(id);
-    if(idx>=0){ pinned.splice(idx,1); }
-    else if(pinned.length<4){ pinned.push(id); }
-    return {...camp, pinnedTabs: pinned};
-  });
-  saveState(); render();
+function saveDeskPrefs(){ try{ localStorage.setItem('solorpg-desk', JSON.stringify(deskPrefsCache)); }catch(e){} }
+function deskDockOpen(){ return deskPrefs().dock; }
+function toggleDeskDock(){ deskPrefs().dock = !deskPrefs().dock; saveDeskPrefs(); render(); }
+function toggleSplitView(){ deskPrefs().two = !deskPrefs().two; ui.deskFocus = 0; saveDeskPrefs(); render(); }
+function deskPaneOptions(){ return getAllTabs().filter(t=>t.id!=='dice'); }
+// Both pane contents (the second is kept while only one is shown).
+function deskPaneList(){
+  const valid = deskPaneOptions().map(t=>t.id);
+  const panes = deskPrefs().panes.filter((id,i,arr)=>valid.includes(id) && arr.indexOf(id)===i).slice(0,2);
+  ['map','notes', ...valid].forEach(id=>{ if(panes.length<2 && valid.includes(id) && !panes.includes(id)) panes.push(id); });
+  return panes;
 }
+function deskPanes(){ const panes = deskPaneList(); return deskPrefs().two ? panes : panes.slice(0,1); }
+// Bring the panes in line with ui.activeTab (see above).
+function deskSync(){
+  const panes = deskPaneList();
+  const n = deskPrefs().two ? Math.min(2, panes.length) : 1;
+  let focus = Math.min(ui.deskFocus||0, n-1);
+  const t = ui.activeTab;
+  if(t && t!=='dice' && deskPaneOptions().some(x=>x.id===t)){
+    const at = panes.slice(0,n).indexOf(t);
+    if(at>=0) focus = at;
+    else { const old = panes.indexOf(t); if(old>=0) panes[old] = panes[focus]; panes[focus] = t; }
+  }
+  ui.deskFocus = focus;
+  if(panes[focus]) ui.activeTab = panes[focus];
+  if(panes.join()!==deskPrefs().panes.join()){ deskPrefs().panes = panes; saveDeskPrefs(); }
+  return panes.slice(0,n);
+}
+// Clicking into a pane gives it the focus (no re-render needed).
+function deskFocusPane(i){
+  const panes = deskPanes();
+  if(!panes[i] || ui.deskFocus===i) return;
+  ui.deskFocus = i; ui.activeTab = panes[i];
+  document.querySelectorAll('.desk-pane').forEach((el,j)=>el.classList.toggle('focus', j===i));
+}
+function deskSetPane(i, id){ ui.deskFocus = i; ui.activeTab = id; render(); }
+function deskClosePane(i){
+  const panes = deskPaneList();
+  if(i===0) deskPrefs().panes = [panes[1], panes[0]];
+  deskPrefs().two = false; ui.deskFocus = 0; saveDeskPrefs();
+  ui.activeTab = deskPrefs().panes[0] || panes[0];
+  render();
+}
+function renderDesk(){
+  const panes = deskSync();
+  const opts = deskPaneOptions();
+  const paneHtml = panes.map((id,i)=>{
+    const select = `<select class="pane-select" onchange="deskSetPane(${i}, this.value)">${opts.map(t=>`<option value="${t.id}" ${t.id===id?'selected':''}>${t.icon} ${escapeHtml(t.label)}</option>`).join('')}</select>`;
+    return `<div class="desk-col desk-pane ${panes.length>1 && ui.deskFocus===i ? 'focus' : ''}" onpointerdown="deskFocusPane(${i})">
+      <div class="desk-hd">${select}
+        ${panes.length>1 ? `<button class="icon-btn" style="margin-left:auto;padding:2px 6px;" onclick="deskClosePane(${i})" title="Bereich schließen">✕</button>` : ''}</div>
+      <div class="desk-scroll" data-keep-scroll="pane-${i}-${id}">${renderTabContent(id)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="desk-cols ${deskDockOpen() ? '' : 'no-dock'}">${deskDockOpen() ? renderOracleDock() : ''}${paneHtml}</div>`;
+}
+// Is a tab on screen right now (phone: the open tab; PC: a pane)?
+function isTabShown(id){ return isDesk() ? deskPanes().includes(id) : ui.activeTab===id; }
+
 function toggleHeaderMenu(){ ui.headerMenuOpen = !ui.headerMenuOpen; render(); }
 function toggleManaging(){
   ui.managing=!ui.managing;
@@ -264,7 +348,7 @@ function toggleManaging(){
 function renderHeader(){
   const active = getActive();
   const isKarteiTab = active.karteien.some(k=>k.id===ui.activeTab);
-  const showGear = ui.activeTab==='dice' || ui.activeTab==='character' || ui.activeTab==='map' || ui.activeTab==='relations' || isKarteiTab;
+  const showGear = isDesk() || ui.activeTab==='dice' || ui.activeTab==='character' || ui.activeTab==='map' || ui.activeTab==='relations' || isKarteiTab;
   const camp = getActiveCampaign();
   return `
   <div class="header">
@@ -276,7 +360,7 @@ function renderHeader(){
       </div>
     </div>
     <div class="header-actions">
-      ${getAllTabs().length>1 ? `<button class="icon-btn splitview-btn ${active.splitView?'active':''}" onclick="toggleSplitView()" title="Splitscreen (bis zu 4 Tabs nebeneinander)">⊞</button>` : ''}
+      ${isDesk() && deskPaneOptions().length>1 ? `<button class="icon-btn ${deskPrefs().two?'active':''}" onclick="toggleSplitView()" title="${deskPrefs().two ? 'Nur ein Bereich' : 'Zwei Bereiche nebeneinander'}">◫</button>` : ''}
       ${renderSyncHeaderButton()}
       ${showGear ? `<button class="btn ${ui.managing?'btn-gold':'btn-raised'} edit-toggle" onclick="toggleManaging()">${ui.managing?'✓ Fertig':'✎ Bearbeiten'}</button>` : ''}
       <div style="position:relative;">
@@ -327,27 +411,6 @@ function renderTabContent(tabId){
   }
   return '';
 }
-function renderSplitView(){
-  const active = getActive();
-  const allTabs = getAllTabs();
-  const pinned = active.pinnedTabs.map(id=>allTabs.find(t=>t.id===id)).filter(Boolean);
-  if(!pinned.length){
-    return `<div class="empty" style="padding:48px 0;">
-      <span style="font-size:28px;">📌</span>
-      <span>Splitscreen ist an — klicke links Tabs an, um sie anzuheften (bis zu 4).</span>
-    </div>`;
-  }
-  return `<div class="split-grid">${pinned.map(t=>`
-    <div class="split-pane">
-      <div class="row between split-pane-header">
-        <span class="label" style="color:var(--gold);">${t.icon} ${escapeHtml(t.label)}</span>
-        <button class="icon-btn raised" onclick="togglePinTab('${t.id}')" title="Lösen">✕</button>
-      </div>
-      <div class="split-pane-body">${renderTabContent(t.id)}</div>
-    </div>`).join('')}
-  </div>`;
-}
-
 function renderModals(){
   let html = '';
   if(ui.showOptions) html += renderOptionsModal();

@@ -395,8 +395,7 @@ function refineRelationLayout(gen, target){
     // Re-render only if it's visible and nobody is typing somewhere.
     const tag = document.activeElement && document.activeElement.tagName;
     const typing = tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT';
-    const active = getActive();
-    const visible = ui.activeTab==='relations' || (active.splitView && active.pinnedTabs.includes('relations'));
+    const visible = isTabShown('relations');
     if(visible && !typing) render();
   }
   if(r.done) saveRelationLayout(target);

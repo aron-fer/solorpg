@@ -24,8 +24,6 @@ button { font-family: inherit; cursor:pointer; background:none; border:none; col
 .split-pane { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:10px; min-width:0; max-width:100%; overflow:hidden; }
 .split-pane-header { padding:2px 4px 8px; border-bottom:1px solid var(--border); }
 .split-pane-body { display:flex; flex-direction:column; gap:12px; min-width:0; max-width:100%; }
-.splitview-btn { display:none; }
-@media (min-width: 900px) { .splitview-btn { display:inline-flex; } }
 .span-all { grid-column: 1 / -1; }
 .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:10px; min-width:0; }
 .label { font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); font-family: ui-monospace, monospace; display:flex; align-items:center; gap:6px; }
@@ -216,3 +214,47 @@ textarea { resize:none; font-family: Georgia, serif; }
 .battle-stats { font-size:14px; }
 .bestiary-btn { display:inline-block; margin:2px 0 0 6px; padding:0 8px; border:1px solid var(--gold-dim); border-radius:8px; color:var(--gold); font-size:12px; line-height:20px; }
 .battle-desc { white-space:pre-wrap; font-size:13px; line-height:1.5; color:var(--text-muted); padding-top:6px; }
+.combo-badge { font-family:ui-monospace, monospace; color:var(--gold-dim); white-space:nowrap; }
+/* PC workspace: oracle docked on the left, 1–2 panes on the right. The page
+   itself doesn't scroll; every column has its own scrollbar. */
+.main.desk { max-width:none; height:100vh; overflow:hidden; padding:10px 14px 0 102px; gap:8px; }
+.desk-cols { flex:1; min-height:0; display:flex; background:var(--panel); border:1px solid var(--border); border-bottom:none; border-radius:12px 12px 0 0; overflow:hidden; }
+.desk-col { display:flex; flex-direction:column; min-height:0; min-width:0; border-right:1px solid var(--border); }
+.desk-col:last-child { border-right:none; }
+.desk-hd { display:flex; align-items:center; gap:8px; min-height:38px; padding:4px 10px; background:var(--panel-raised); border-bottom:1px solid var(--border); flex-shrink:0; }
+.desk-hd > .label:first-child { margin-right:auto; }
+.desk-scroll { flex:1; min-height:0; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:10px; }
+.desk-scroll > * { flex-shrink:0; }
+.dock-tables { width:280px; flex-shrink:0; }
+.dock-tables .desk-scroll { gap:6px; }
+.dock-results { width:330px; flex-shrink:0; }
+.dock-log { gap:8px; }
+.dock-dice { padding:10px; display:flex; flex-direction:column; gap:8px; border-bottom:1px solid var(--border); flex-shrink:0; }
+.dock-dice-row { display:flex; gap:4px; }
+.dock-dice-row .die-btn { flex:1; min-width:0; padding:7px 0; font-size:13px; }
+.dock-results > .panel { border:none; border-bottom:1px solid var(--border); border-radius:0; flex-shrink:0; }
+.desk-pane { flex:1 1 0; }
+.desk-pane.focus > .desk-hd { box-shadow:inset 0 -2px 0 var(--gold-dim); }
+.desk-pane > .desk-scroll { padding:12px; gap:12px; }
+.pane-select { background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:4px 8px; font-size:14px; font-family:inherit; }
+/* In the dock the list is compact like a menu, the search stays on top. */
+.desk .table-search { position:sticky; top:-10px; z-index:2; background:var(--panel); margin:-10px -10px 0 !important; padding:10px; }
+.dock-tables-hd { flex-wrap:wrap; padding:6px 10px; }
+.dock-tables-hd > .row { flex-wrap:wrap; }
+.dock-tables-hd .btn { padding:3px 7px !important; font-size:12px !important; }
+.desk .dock-tables .table-row { padding:5px 10px; font-size:14.5px; }
+.desk .dock-tables .table-rows, .desk .dock-tables #table-list { gap:1px; }
+.desk .dock-tables .fav-btn { font-size:15px; }
+.desk .dock-tables .icon-btn.raised { padding:3px 7px; font-size:13px; }
+/* Edit tools appear on the row under the mouse only, on top of its right end. */
+@media (hover:hover) {
+  .desk .dock-tables #table-list .row { position:relative; }
+  .desk .dock-tables #table-list .row-tools { display:none; position:absolute; right:2px; top:50%; transform:translateY(-50%); gap:3px; padding-left:8px; background:linear-gradient(90deg, transparent, var(--panel) 8px); }
+  .desk .dock-tables #table-list .row:hover > .row-tools { display:flex; }
+}
+.desk .dock-tables .group-head .label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; display:block; }
+.desk .dock-tables .table-row .small-muted { white-space:nowrap; }
+.desk .dock-tables .table-row > span:first-child { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.desk .dock-tables .table-row { min-width:0; gap:8px; }
+/* PC: the damage bar sits at the bottom of the Kampf pane, not across the screen. */
+.desk .battle-dmg-bar { position:sticky; bottom:-12px; left:auto; right:auto; margin:auto -12px -12px; z-index:3; }
