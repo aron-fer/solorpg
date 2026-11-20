@@ -138,7 +138,8 @@ textarea { resize:none; font-family: Georgia, serif; }
 .roll-popup-text { white-space:pre-line; font-size:17px; line-height:1.5; color:var(--text); }
 .log-card { border:1px solid var(--border); border-radius:10px; overflow:hidden; cursor:copy; flex-shrink:0; }
 .log-card-title { background:#e7dcc4; color:#2a2016; font-size:12px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; padding:5px 10px; }
-.log-card-body { background:var(--panel-raised); color:var(--text-muted); font-size:15px; white-space:pre-line; padding:8px 10px 2px; overflow-wrap:break-word; }
+.log-card-body { background:var(--panel-raised); color:var(--text-muted); font-size:15px; line-height:1.5; padding:9px 12px 4px; overflow-wrap:break-word; display:flex; flex-direction:column; gap:5px; }
+.log-card-body > .bestiary-btn { align-self:flex-start; }
 .log-card-time { background:var(--panel-raised); color:var(--text-faint); font-family:ui-monospace, monospace; font-size:10px; text-align:right; padding:0 10px 6px; }
 .log-card.latest { border-color:var(--gold); }
 .log-card.latest .log-card-body { color:var(--text); }
@@ -218,9 +219,9 @@ textarea { resize:none; font-family: Georgia, serif; }
 .desk-hd > .label:first-child { margin-right:auto; }
 .desk-scroll { flex:1; min-height:0; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:10px; }
 .desk-scroll > * { flex-shrink:0; }
-.dock-tables { width:280px; flex-shrink:0; }
+.dock-tables { width:260px; flex-shrink:0; }
 .dock-tables .desk-scroll { gap:6px; }
-.dock-results { width:330px; flex-shrink:0; }
+.dock-results { width:390px; flex-shrink:0; }
 .dock-log { gap:8px; }
 .dock-dice { padding:10px; display:flex; flex-direction:column; gap:8px; border-bottom:1px solid var(--border); flex-shrink:0; }
 .dock-dice-row { display:flex; gap:4px; }
@@ -319,3 +320,5 @@ input.bad { border-color:var(--wax) !important; }
 .cb { display:inline-block; width:0.95em; height:0.95em; border:1.5px solid currentColor; border-radius:3px; vertical-align:-0.12em; position:relative; opacity:0.8; }
 .cb.on { background:var(--gold); border-color:var(--gold); opacity:1; }
 .cb.on::after { content:''; position:absolute; left:28%; top:6%; width:30%; height:58%; border:solid var(--bg); border-width:0 2px 2px 0; transform:rotate(45deg); }
+.kartei-preview { font-size:13px; line-height:1.4; color:var(--text-muted); white-space:pre-line; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.roll-popup-text { line-height:1.55; }

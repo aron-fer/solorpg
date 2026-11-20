@@ -85,7 +85,9 @@ function toggleKarteiEntryCollapse(karteiId, entryId){
 // key numbers instead of the start of the statline: "HD 4 · AC 3 · #E 1 (3d6)".
 function karteiNotesPreview(notes){
   if(!notes) return '';
-  const snip = t => `<div style="font-size:12px;color:var(--text-muted);white-space:pre-line;">${renderLinkedText(t.length>80 ? t.slice(0,80)+'…' : t)}</div>`;
+  // Only the first paragraph (up to the first empty line), at most two
+  // lines: a short info written at the top, never text cut mid-sentence.
+  const snip = t => { const first = t.trim().split(/\n\s*\n/)[0].trim(); return first ? `<div class="kartei-preview">${renderLinkedText(first)}</div>` : ''; };
   const m = notes.match(SB_START);
   if(!m || !/\bHD\s/.test(notes)) return snip(notes);
   const at = m.index + m[1].length;

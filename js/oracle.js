@@ -556,7 +556,7 @@ function renderLogCards(ctx, log){
     const body = entry.title ? rollPopupBody(entry.text, entry.title) : entry.text;
     return `<div class="log-card ${idx===0?'latest':''}" onclick="copyLogEntry('${ctx}',${idx},event)" title="Antippen = kopieren">
       ${entry.title ? `<div class="log-card-title">${escapeHtml(entry.title)}</div>` : ''}
-      <div class="log-card-body">${escapeHtml(body)}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</div>
+      <div class="log-card-body">${body.split('\n').map(l=>l.trim() ? `<div>${escapeHtml(l)}</div>` : '').join('')}${idx<30 ? bestiaryButtonsFor(entry.text) : ''}</div>
       <div class="log-card-time">${entry.time}</div>
     </div>`;
   }).join('');
