@@ -9,7 +9,13 @@
 
 const TIME_UNDO_MAX = 30;
 function clampInt(v, lo, hi, def){ const n = parseInt(v,10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; }
-function letterOf(s, name){ const l = String(s||'').trim().slice(0,2).toUpperCase(); return l || String(name||'?').trim().charAt(0).toUpperCase() || '?'; }
+// Letter above the boxes; without one the first letter of the name –
+// except torch and lantern, which keep their English letters (T, L).
+const TIME_LETTERS = {fackel:'T', laterne:'L'};
+function letterOf(s, name){
+  const l = String(s||'').trim().slice(0,2).toUpperCase();
+  return l || TIME_LETTERS[String(name||'').trim().toLowerCase()] || String(name||'?').trim().charAt(0).toUpperCase() || '?';
+}
 
 // map.time with defaults. Takes over the earlier versions: map.turns
 // (10-minute turns) and map.time with minutes (turnMin, presets in min).
@@ -20,19 +26,24 @@ function normMapTime(map){
   const perUnit = t.turnMin>0 ? t.turnMin : 10;            // minutes of the old model
   const toUnits = min => Math.max(1, Math.round((parseInt(min,10)||0)/perUnit));
   const fresh = !map.time && !map.turns;
+  // Version 1 put "R: Rast alle 6" in by default and gave Fackel the letter F.
+  const v1 = Array.isArray(t.events) && !(t.v>=2);
+  const events = v1 ? t.events.filter(e=>!(e.letter==='R' && e.name==='Rast' && +e.every===6)) : t.events;
+  const fixLetter = x => v1 && x.letter==='F' && /^fackel$/i.test(String(x.name||'').trim()) ? {...x, letter:'T'} : x;
   return {
+    v: 2,
     on: t.on!=null ? !!t.on : !!old.on,
     unit: String(t.unit || (fresh && hex ? 'Wache' : 'Turn')),
     group: clampInt(t.group, 1, 60, 6),
-    blockName: String(t.blockName!=null ? t.blockName : (fresh && hex ? 'Tag' : '')),
+    blockName: String(t.blockName||''),
     turn: Math.max(0, parseInt(t.turn!=null ? t.turn : old.turn, 10) || 0),
-    events: Array.isArray(t.events)
-      ? t.events.map(e=>({id: e.id||uid(), letter: letterOf(e.letter, e.name), name: String(e.name||''), every: clampInt(e.every, 1, 999, 2)}))
-      : (hex ? [] : [{letter:'W', name:'Begegnungsprüfung', every:2}, {letter:'R', name:'Rast', every:6}]).map(e=>({id:uid(), ...e})),
+    events: Array.isArray(events)
+      ? events.map(e=>({id: e.id||uid(), letter: letterOf(e.letter, e.name), name: String(e.name||''), every: clampInt(e.every, 1, 999, 2)}))
+      : (hex ? [] : [{letter:'W', name:'Begegnungsprüfung', every:2}]).map(e=>({id:uid(), ...e})),
     presets: Array.isArray(t.presets)
-      ? t.presets.map(p=>({id: p.id||uid(), letter: letterOf(p.letter, p.name), name: String(p.name||''), len: p.len>0 ? clampInt(p.len, 1, 9999, 6) : toUnits(p.min)}))
+      ? t.presets.map(fixLetter).map(p=>({id: p.id||uid(), letter: letterOf(p.letter, p.name), name: String(p.name||''), len: p.len>0 ? clampInt(p.len, 1, 9999, 6) : toUnits(p.min)}))
       : (hex ? [] : [{letter:'T', name:'Fackel', len:6}, {letter:'L', name:'Laterne', len:24}]).map(p=>({id:uid(), ...p})),
-    countdowns: (Array.isArray(t.countdowns) ? t.countdowns : (old.effects||[]).map(e=>{
+    countdowns: (Array.isArray(t.countdowns) ? t.countdowns.map(fixLetter) : (old.effects||[]).map(e=>{
         // old effects counted down in turns: left of max
         const max = Math.max(1, parseInt(e.max,10)||1), left = Math.min(max, Math.max(0, parseInt(e.left,10)||0));
         return {name:e.name, len:max, count: Math.min(max, max-left+1), paused:e.paused};
