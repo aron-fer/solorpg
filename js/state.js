@@ -130,11 +130,7 @@ function ensureCampaign(data){
     const s = m.gridSize, h = s/2;
     return {...m, cellCentered:true, nodes: m.nodes.map(n=>(n.x%s===0 && n.y%s===0) ? {...n, x:n.x+h, y:n.y+h} : n)};
   });
-  // One clock for the campaign and the things tracked on it (turns.js).
-  // The old per-map turn tracker counted effects in 10-minute turns.
-  d.clockMin = Number.isFinite(data && data.clockMin) ? Math.max(0, Math.round(data.clockMin)) : 8*60;
-  d.tracked = normTracked(data && Array.isArray(data.tracked) ? data.tracked : trackedFromOldTurns(data && data.maps));
-  d.timeUndo = Array.isArray(data && data.timeUndo) ? data.timeUndo.slice(-TIME_UNDO_MAX) : [];
+  migrateCampaignClock(d, data);   // earlier campaign clock → countdowns (turns.js)
   // Areas (encounter tables per hex) are optional; campaigns that already
   // use them keep them on.
   d.areasEnabled = (data && typeof data.areasEnabled==='boolean') ? data.areasEnabled : d.maps.some(m=>m.nodes.some(n=>n.area));

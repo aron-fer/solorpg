@@ -1,102 +1,63 @@
-// Time on the Karte tab.
-// One clock for the whole campaign (camp.clockMin: minutes since Tag 1, 00:00)
-// and the things being tracked (torch, rations, a spell …: camp.tracked) run
-// on it, whatever map is open. Each map decides how time moves there
-// (map.time):
-//  - mode 'turns': "+1 Turn" (length per map, 10 min by default), counted per
-//    map, shown as boxes in rows (6 by default);
-//  - mode 'clock': step buttons of any length the map defines, plus a free amount.
-// Each map also has its own presets of things to track. Every step can be
-// taken back (camp.timeUndo holds the state before the last steps).
+// Time on the Karte tab, counted abstractly – no clock, no minutes.
+// Each map counts in its own unit ("Turn", "Wache", …) and shows the current
+// block of boxes (6 by default), like a paper turn tracker:
+//  - recurring events (W every 2, R every 6 …) as letters above the boxes;
+//  - countdowns (torch, light spell …) that count up with every unit
+//    (1/6, 2/6 … 6/6 and stay there); where one ends in the shown block,
+//    its letter stands above that box.
+// Everything lives in map.time; every step can be taken back.
 
 const TIME_UNDO_MAX = 30;
 function clampInt(v, lo, hi, def){ const n = parseInt(v,10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; }
+function letterOf(s, name){ const l = String(s||'').trim().slice(0,2).toUpperCase(); return l || String(name||'?').trim().charAt(0).toUpperCase() || '?'; }
 
-// map.time with defaults. Older maps had map.turns (10-minute turns only).
+// map.time with defaults. Takes over the earlier versions: map.turns
+// (10-minute turns) and map.time with minutes (turnMin, presets in min).
 function normMapTime(map){
   const t = map.time || {};
   const old = map.turns || {};
-  const mode = t.mode==='clock' || t.mode==='turns' ? t.mode : (map.grid==='hex' && !old.on ? 'clock' : 'turns');
+  const hex = map.grid==='hex';
+  const perUnit = t.turnMin>0 ? t.turnMin : 10;            // minutes of the old model
+  const toUnits = min => Math.max(1, Math.round((parseInt(min,10)||0)/perUnit));
+  const fresh = !map.time && !map.turns;
   return {
     on: t.on!=null ? !!t.on : !!old.on,
-    mode,
-    turnMin: clampInt(t.turnMin, 1, 1e6, 10),
+    unit: String(t.unit || (fresh && hex ? 'Wache' : 'Turn')),
     group: clampInt(t.group, 1, 60, 6),
+    blockName: String(t.blockName!=null ? t.blockName : (fresh && hex ? 'Tag' : '')),
     turn: Math.max(0, parseInt(t.turn!=null ? t.turn : old.turn, 10) || 0),
-    steps: Array.isArray(t.steps)
-      ? t.steps.map(s=>({id: s.id||uid(), label: String(s.label||''), min: clampInt(s.min, 1, 1e7, 60)}))
-      : [60, 240, 1440].map(min=>({id:uid(), label:'', min})),
+    events: Array.isArray(t.events)
+      ? t.events.map(e=>({id: e.id||uid(), letter: letterOf(e.letter, e.name), name: String(e.name||''), every: clampInt(e.every, 1, 999, 2)}))
+      : (hex ? [] : [{letter:'W', name:'Begegnungsprüfung', every:2}, {letter:'R', name:'Rast', every:6}]).map(e=>({id:uid(), ...e})),
     presets: Array.isArray(t.presets)
-      ? t.presets.map(p=>({id: p.id||uid(), name: String(p.name||'Effekt'), min: clampInt(p.min, 1, 1e7, 60)}))
-      : (mode==='turns' ? [{name:'Fackel', min:60}, {name:'Laterne', min:240}] : []).map(p=>({id:uid(), ...p})),
+      ? t.presets.map(p=>({id: p.id||uid(), letter: letterOf(p.letter, p.name), name: String(p.name||''), len: p.len>0 ? clampInt(p.len, 1, 9999, 6) : toUnits(p.min)}))
+      : (hex ? [] : [{letter:'T', name:'Fackel', len:6}, {letter:'L', name:'Laterne', len:24}]).map(p=>({id:uid(), ...p})),
+    countdowns: (Array.isArray(t.countdowns) ? t.countdowns : (old.effects||[]).map(e=>{
+        // old effects counted down in turns: left of max
+        const max = Math.max(1, parseInt(e.max,10)||1), left = Math.min(max, Math.max(0, parseInt(e.left,10)||0));
+        return {name:e.name, len:max, count: Math.min(max, max-left+1), paused:e.paused};
+      })).map(c=>{
+        const len = clampInt(c.len, 1, 9999, 6);
+        return {id: c.id||uid(), letter: letterOf(c.letter, c.name), name: String(c.name||'Countdown'), len, count: clampInt(c.count, 1, len, 1), paused: !!c.paused};
+      }),
+    undo: Array.isArray(t.undo) ? t.undo.slice(-TIME_UNDO_MAX) : [],
   };
 }
-function normTracked(list){
-  return (list||[]).map(e=>{
-    const max = clampInt(e.max, 1, 1e7, 60);
-    return {id: e.id||uid(), name: String(e.name||'Effekt'), max, left: clampInt(e.left, 0, max, max), paused: !!e.paused};
-  });
-}
-// Effects of the old per-map turn tracker (counted in 10-minute turns).
-function trackedFromOldTurns(maps){
-  const out = [];
-  (maps||[]).forEach(m=>((m.turns && m.turns.effects) || []).forEach(e=>{
-    const max = Math.max(1, parseInt(e.max,10)||1);
-    out.push({id: e.id, name: e.name, max: max*10, left: Math.min(max, Math.max(0, parseInt(e.left,10)||0))*10, paused: !!e.paused});
-  }));
-  return out;
-}
-
-// ---- Durations ----
-function fmtClock(min){
-  const day = Math.floor(min/1440)+1, m = ((min%1440)+1440)%1440;
-  return `Tag ${day} · ${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-}
-// "1 Tag 4 Std", "2 Std 30 Min", "10 Min"
-function fmtDur(min){
-  const d = Math.floor(min/1440), h = Math.floor((min%1440)/60), m = min%60;
-  const parts = [];
-  if(d) parts.push(`${d} ${d===1?'Tag':'Tage'}`);
-  if(h) parts.push(`${h} Std`);
-  if(m || !parts.length) parts.push(`${m} Min`);
-  return parts.join(' ');
-}
-// Short, for chips: "0:40", "3:10", "5 Tage", "1 Tag 4 Std"
-function fmtDurShort(min){
-  if(min < 1440) return `${Math.floor(min/60)}:${String(min%60).padStart(2,'0')}`;
-  return fmtDur(min - min%60);
-}
-// In turn mode, a duration that fits whole turns is shown in turns.
-function fmtDurFor(min, t){
-  return t.mode==='turns' && min % t.turnMin===0 ? `${min/t.turnMin} ${min/t.turnMin===1 ? 'Turn' : 'Turns'}` : fmtDur(min);
-}
-// "45", "45 Min", "2:30", "3 Std", "1,5 Std", "2 Tage", "1 Tag 4 Std", "6 Turns".
-// A bare number is turns on a turn map, minutes otherwise. null = not understood.
-function parseDur(str, t){
-  str = String(str||'').trim().toLowerCase().replace(',', '.');
-  if(!str) return null;
-  const hm = str.match(/^(\d+):(\d{1,2})$/);
-  if(hm) return parseInt(hm[1],10)*60 + parseInt(hm[2],10);
-  let total = 0, any = false;
-  const re = /(\d+(?:\.\d+)?)\s*([a-zäöü]*)/g;
-  let m, rest = str;
-  while((m = re.exec(str))){
-    if(!m[0]) break;
-    const n = parseFloat(m[1]), u = m[2];
-    let f;
-    if(!u) f = t && t.mode==='turns' ? t.turnMin : 1;
-    else if(/^(m|min|mins|minute|minuten)$/.test(u)) f = 1;
-    else if(/^(h|std|stunde|stunden)$/.test(u)) f = 60;
-    else if(/^(d|t|tag|tage|tagen)$/.test(u)) f = 1440;
-    else if(/^(w|wo|woche|wochen)$/.test(u)) f = 10080;
-    else if(/^(turn|turns|runde|runden)$/.test(u)) f = t ? t.turnMin : 10;
-    else return null;
-    total += n*f; any = true;
-    rest = rest.replace(m[0], '');
+// The campaign-wide clock of the previous version (tracked things in
+// minutes) goes to the active map as countdowns, once.
+function migrateCampaignClock(d, data){
+  if(!data || !Array.isArray(data.tracked)) return;
+  const map = d.maps.find(m=>m.id===d.activeMapId);
+  if(map && data.tracked.length){
+    const per = (data.maps||[]).find(m=>m.id===map.id);
+    const turnMin = per && per.time && per.time.turnMin>0 ? per.time.turnMin : 10;
+    const add = data.tracked.map(e=>{
+      const len = Math.max(1, Math.round((e.max||0)/turnMin)), left = Math.round((e.left||0)/turnMin);
+      return {id:uid(), letter: letterOf('', e.name), name: e.name||'Countdown', len, count: Math.min(len, Math.max(1, len-left+1)), paused: !!e.paused};
+    });
+    map.time = {...map.time, countdowns: [...map.time.countdowns, ...add]};
   }
-  if(!any || rest.replace(/[\s+und&]/g,'')) return null;
-  const r = Math.round(total);
-  return r>0 ? r : null;
+  delete d.clockMin; delete d.tracked; delete d.timeUndo;
 }
 
 // ---- State changes ----
@@ -105,215 +66,152 @@ function updateMapTime(fn){
   updateCurrentMap(m=>({...m, time: fn(normMapTime(m))}));
   saveState(); render();
 }
+// A step that can be taken back: the state before it goes on the undo stack.
+function stepMapTime(fn){
+  updateMapTime(t=>({...fn(t), undo: [...t.undo, {turn:t.turn, countdowns:t.countdowns}].slice(-TIME_UNDO_MAX)}));
+}
 function toggleTurnTracker(){ ui.timePop = null; updateMapTime(t=>({...t, on:!t.on})); }
-function snapshotTime(camp){
-  const m = camp.maps.find(x=>x.id===camp.activeMapId);
-  return {clockMin: camp.clockMin, tracked: camp.tracked, mapId: camp.activeMapId, turn: m ? normMapTime(m).turn : 0};
+function advanceTurn(){
+  ui.timePop = null;
+  stepMapTime(t=>({...t, turn: t.turn+1, countdowns: t.countdowns.map(c=>c.paused ? c : {...c, count: Math.min(c.len, c.count+1)})}));
 }
-// Move the clock on; tracked things that run lose the same time.
-function advanceTime(min, countTurn){
-  if(!(min>0)) return;
-  updateActive(camp=>{
-    const maps = countTurn ? camp.maps.map(m=>{ if(m.id!==camp.activeMapId) return m; const t = normMapTime(m); return {...m, time:{...t, turn:t.turn+1}}; }) : camp.maps;
-    return {...camp, maps,
-      clockMin: camp.clockMin + min,
-      tracked: camp.tracked.map(e=>e.paused || e.left<=0 ? e : {...e, left: Math.max(0, e.left-min)}),
-      timeUndo: [...camp.timeUndo, snapshotTime(camp)].slice(-TIME_UNDO_MAX)};
+function undoTurn(){
+  ui.timePop = null;
+  updateMapTime(t=>{
+    const last = t.undo[t.undo.length-1];
+    return last ? {...t, turn:last.turn, countdowns:last.countdowns, undo:t.undo.slice(0,-1)} : t;
   });
-  ui.timePop = null;
-  saveState(); render();
-}
-function advanceTurn(){ const t = curMapTime(); if(t) advanceTime(t.turnMin, true); }
-function advanceTimeFree(){
-  const el = document.getElementById('time-free');
-  const min = parseDur(el && el.value, curMapTime());
-  if(!min){ if(el){ el.focus(); el.classList.add('bad'); } return; }
-  advanceTime(min, false);
-}
-// Takes the last step back: clock, tracked things and that map's turn count.
-function undoTime(){
-  updateActive(camp=>{
-    const last = camp.timeUndo[camp.timeUndo.length-1];
-    if(!last) return camp;
-    const maps = camp.maps.map(m=>m.id===last.mapId ? {...m, time:{...normMapTime(m), turn:last.turn}} : m);
-    return {...camp, maps, clockMin:last.clockMin, tracked:last.tracked, timeUndo: camp.timeUndo.slice(0,-1)};
-  });
-  ui.timePop = null;
-  saveState(); render();
-}
-function setCampaignClock(){
-  const day = parseInt((document.getElementById('clock-day')||{}).value, 10);
-  const hm = String((document.getElementById('clock-time')||{}).value||'').match(/^(\d{1,2}):(\d{2})$/);
-  if(!(day>=1) || !hm || +hm[1]>23 || +hm[2]>59){ showToast('Tag ≥ 1 und Uhrzeit wie 14:20'); return; }
-  updateActive(camp=>({...camp, clockMin: (day-1)*1440 + (+hm[1])*60 + (+hm[2])}));
-  ui.timePop = null;
-  saveState(); render();
 }
 function resetMapTurns(){
-  if(!confirm('Turn-Zähler dieser Karte auf 0 setzen? Uhr und Verfolgtes bleiben, wie sie sind.')) return;
-  updateMapTime(t=>({...t, turn:0}));
+  if(!confirm('Zähler dieser Karte auf 0 setzen? Die Countdowns bleiben, wie sie sind.')) return;
+  updateMapTime(t=>({...t, turn:0, undo:[]}));
 }
-
-// Tracked things
-function updateTracked(fn){ updateActive(camp=>({...camp, tracked: fn(camp.tracked)})); saveState(); render(); }
-function addTracked(name, min){
-  if(!(min>0)) return;
+// Countdowns
+function addCountdown(letter, name, len){
+  if(!(len>0)) return;
   ui.timePop = null;
-  updateTracked(list=>[...list, {id:uid(), name:(name||'').trim()||'Effekt', max:min, left:min, paused:false}]);
+  updateMapTime(t=>({...t, countdowns:[...t.countdowns, {id:uid(), letter:letterOf(letter, name), name:(name||'').trim()||'Countdown', len, count:1, paused:false}]}));
 }
-function addTrackedPreset(id){ const p = (curMapTime()||{presets:[]}).presets.find(x=>x.id===id); if(p) addTracked(p.name, p.min); }
-function addTrackedCustom(){
-  const name = document.getElementById('track-name'), dur = document.getElementById('track-dur');
-  const min = parseDur(dur && dur.value, curMapTime());
-  if(!min){ if(dur){ dur.focus(); dur.classList.add('bad'); } return; }
-  addTracked(name ? name.value : '', min);
+function addCountdownPreset(id){ const p = (curMapTime()||{presets:[]}).presets.find(x=>x.id===id); if(p) addCountdown(p.letter, p.name, p.len); }
+function addCountdownCustom(){
+  const name = document.getElementById('cd-name'), len = document.getElementById('cd-len');
+  const n = parseInt(len && len.value, 10);
+  if(!(n>0)){ if(len){ len.focus(); len.classList.add('bad'); } return; }
+  addCountdown('', name ? name.value : '', n);
 }
-function stepTracked(id, d){ updateTracked(list=>list.map(e=>e.id!==id ? e : {...e, left: Math.max(0, e.left+d), max: Math.max(e.max, e.left+d)})); }
-function toggleTrackedPause(id){ updateTracked(list=>list.map(e=>e.id===id ? {...e, paused:!e.paused} : e)); }
-function removeTracked(id){ ui.timePop = null; updateTracked(list=>list.filter(e=>e.id!==id)); }
+function updateCountdown(id, fn){ updateMapTime(t=>({...t, countdowns:t.countdowns.map(c=>c.id===id ? fn(c) : c)})); }
+function stepCountdown(id, d){ updateCountdown(id, c=>({...c, count: Math.min(c.len, Math.max(1, c.count+d))})); }
+function toggleCountdownPause(id){ updateCountdown(id, c=>({...c, paused:!c.paused})); }
+function removeCountdown(id){ ui.timePop = null; updateMapTime(t=>({...t, countdowns:t.countdowns.filter(c=>c.id!==id)})); }
 function toggleTimePop(what){ ui.timePop = ui.timePop===what ? null : what; render(); }
+function showTimeLetters(text){ showToast(text); }
 
-// Settings of the map (edit mode)
-function setTimeMode(mode){ updateMapTime(t=>({...t, mode})); }
-function onTimeDurInput(el, field){
-  const t = curMapTime();
-  const min = parseDur(el.value, field==='turnMin' ? {mode:'clock'} : t);
-  if(!min){ el.classList.add('bad'); return; }
-  updateMapTime(x=>({...x, [field]:min}));
+// Settings (edit mode)
+function onTimeField(field, el){
+  const v = field==='group' ? clampInt(el.value, 1, 60, 6) : el.value;
+  updateCurrentMap(m=>({...m, time:{...normMapTime(m), [field]:v}})); saveState();
 }
-function onTimeGroupInput(el){ updateMapTime(t=>({...t, group: clampInt(el.value, 1, 60, t.group)})); }
-function addTimeStep(){ updateMapTime(t=>({...t, steps:[...t.steps, {id:uid(), label:'', min:60}]})); }
-function removeTimeStep(id){ updateMapTime(t=>({...t, steps:t.steps.filter(s=>s.id!==id)})); }
-function onTimeStepLabel(id, el){ updateCurrentMap(m=>{ const t = normMapTime(m); return {...m, time:{...t, steps:t.steps.map(s=>s.id===id ? {...s, label:el.value} : s)}}; }); saveState(); }
-function onTimeStepDur(id, el){
-  const min = parseDur(el.value, {mode:'clock'});
-  if(!min){ el.classList.add('bad'); return; }
-  updateMapTime(t=>({...t, steps:t.steps.map(s=>s.id===id ? {...s, min} : s)}));
+function addTimeItem(list){
+  updateMapTime(t=>({...t, [list]:[...t[list], list==='events' ? {id:uid(), letter:'', name:'', every:2} : {id:uid(), letter:'', name:'', len:6}]}));
 }
-function addTimePreset(){ const t = curMapTime(); updateMapTime(x=>({...x, presets:[...x.presets, {id:uid(), name:'', min: x.mode==='turns' ? x.turnMin*6 : 1440}]})); }
-function removeTimePreset(id){ updateMapTime(t=>({...t, presets:t.presets.filter(p=>p.id!==id)})); }
-function onTimePresetName(id, el){ updateCurrentMap(m=>{ const t = normMapTime(m); return {...m, time:{...t, presets:t.presets.map(p=>p.id===id ? {...p, name:el.value} : p)}}; }); saveState(); }
-function onTimePresetDur(id, el){
-  const min = parseDur(el.value, curMapTime());
-  if(!min){ el.classList.add('bad'); return; }
-  updateMapTime(t=>({...t, presets:t.presets.map(p=>p.id===id ? {...p, min} : p)}));
+function removeTimeItem(list, id){ updateMapTime(t=>({...t, [list]:t[list].filter(x=>x.id!==id)})); }
+function onTimeItem(list, id, field, el){
+  const v = field==='every' || field==='len' ? clampInt(el.value, 1, 9999, 1) : (field==='letter' ? el.value.trim().slice(0,2).toUpperCase() : el.value);
+  updateCurrentMap(m=>{ const t = normMapTime(m); return {...m, time:{...t, [list]:t[list].map(x=>x.id===id ? {...x, [field]:v} : x)}}; });
+  saveState();
 }
 
 // ---- Views ----
-// The strip above the map: turns (or clock), tracked things, the step buttons.
+// The strip above the map: count, the current block with its letters,
+// the countdowns.
 function renderTimeStrip(map){
   const t = normMapTime(map);
   if(!t.on) return '';
-  const camp = getActive();
-  const turns = t.mode==='turns';
-  // In turns only what lasts a few turns (torch 4/6); rations etc. as time.
-  const inTurns = e => turns && e.max % t.turnMin===0 && e.max/t.turnMin <= 60;
-  const left = e => inTurns(e) ? `${Math.ceil(e.left/t.turnMin)}/${e.max/t.turnMin}` : fmtDurShort(e.left);
-  const chips = camp.tracked.map(e=>`<button class="time-fx ${e.left<=0?'out':''} ${e.paused?'paused':''} ${ui.timePop==='fx:'+e.id?'on':''}" onclick="toggleTimePop('fx:${e.id}')">
-      <span>${escapeHtml(e.name)}</span><span class="time-fx-bar"><i style="width:${Math.round(100*e.left/e.max)}%"></i></span><span class="time-fx-left">${e.left<=0 ? 'aus' : left(e)}${e.paused ? ' · Pause' : ''}</span>
-    </button>`).join('')
-    + `<button class="time-fx add ${ui.timePop==='add'?'on':''}" onclick="toggleTimePop('add')">+ Verfolgen</button>`;
-  const undo = `<button class="btn btn-raised time-btn" onclick="undoTime()" ${camp.timeUndo.length?'':'disabled style="opacity:.4;"'} title="Letzten Schritt zurücknehmen">${turns ? '−' : '↶'}</button>`;
-  let main, btns;
-  if(turns){
-    const inRow = t.turn % t.group;
-    const boxes = Array.from({length:t.group}, (_,i)=>`<span class="turn-box${i<inRow?' on':''}"></span>`).join('');
-    main = `<span class="label">Turn</span><span class="time-big">${t.turn}</span><span class="turn-boxes">${boxes}</span>`;
-    btns = `${undo}<button class="btn btn-gold time-btn" onclick="advanceTurn()">+1 Turn</button>`;
-  } else {
-    main = `<button class="time-big time-clock ${ui.timePop==='clock'?'on':''}" onclick="toggleTimePop('clock')" title="Tag und Uhrzeit ändern">${fmtClock(camp.clockMin)}</button>`;
-    btns = t.steps.map(s=>`<button class="btn btn-raised time-btn time-step" onclick="advanceTime(${s.min})">${escapeHtml(s.label ? s.label : '+'+fmtDur(s.min))}</button>`).join('')
-      + `<button class="btn btn-raised time-btn ${ui.timePop==='free'?'active':''}" onclick="toggleTimePop('free')" title="Beliebige Zeit vorstellen">+ …</button>${undo}`;
+  const next = t.turn + 1;                          // the box being played now
+  const start = Math.floor((next-1)/t.group)*t.group + 1;
+  const boxes = [];
+  for(let n=start; n<start+t.group; n++){
+    const ev = t.events.filter(e=>n % e.every===0);
+    const ends = t.countdowns.filter(c=>!c.paused && c.count<c.len && n===t.turn+1+(c.len-c.count));
+    const title = [...ev.map(e=>`${e.letter}: ${e.name||'Ereignis'}`), ...ends.map(c=>`${c.letter}: ${c.name} endet`)].join(' · ');
+    boxes.push(`<div class="tt-cell">
+      <button class="tt-mk" ${title ? `title="${escapeHtml(title)}" onclick="showTimeLetters(${jsStr(title)})"` : 'tabindex="-1"'}>${ev.map(e=>escapeHtml(e.letter)).join('')}${ends.map(c=>`<span class="tt-end">${escapeHtml(c.letter)}</span>`).join('')}</button>
+      <span class="tt-box ${n<=t.turn?'on':''} ${n===next?'now':''}"></span>
+    </div>`);
   }
+  const chips = t.countdowns.map(c=>`<button class="time-fx ${c.paused?'paused':''} ${ui.timePop==='cd:'+c.id?'on':''}" onclick="toggleTimePop('cd:${c.id}')">
+      <span>${escapeHtml(c.name)}</span><span class="time-fx-bar"><i style="width:${Math.round(100*c.count/c.len)}%"></i></span><span class="time-fx-left">${c.count}/${c.len}${c.paused ? ' · Pause' : ''}</span>
+    </button>`).join('')
+    + `<button class="time-fx add ${ui.timePop==='add'?'on':''}" onclick="toggleTimePop('add')">+ Countdown</button>`;
+  const block = t.blockName.trim() ? `<span class="label">· ${escapeHtml(t.blockName.trim())} ${Math.floor(t.turn/t.group)+1}</span>` : '';
   return `<div class="time-strip">
-    <div class="time-main">${main}</div>
+    <div class="time-main"><span class="label">${escapeHtml(t.unit||'Turn')}</span><span class="time-big">${t.turn}</span>${block}</div>
+    <div class="time-btns">
+      <button class="btn btn-raised time-btn" onclick="undoTurn()" ${t.undo.length?'':'disabled style="opacity:.4;"'} title="Letzten Schritt zurücknehmen">−</button>
+      <button class="btn btn-gold time-btn" onclick="advanceTurn()">+1 ${escapeHtml(t.unit||'Turn')}</button>
+    </div>
+    <div class="tt-block">${boxes.join('')}</div>
     <div class="time-fxs">${chips}</div>
-    <div class="time-btns">${btns}</div>
-    ${renderTimePop(t, camp)}
+    ${renderTimePop(t)}
   </div>`;
 }
-function renderTimePop(t, camp){
+function renderTimePop(t){
   const p = ui.timePop;
   if(!p) return '';
-  const turns = t.mode==='turns';
   let inner = '';
   if(p==='add'){
-    inner = `${t.presets.length ? `<span class="label">Vorlagen dieser Karte</span>
-      <div class="row wrap" style="gap:6px;">${t.presets.map(x=>`<button class="btn btn-raised time-btn" onclick="addTrackedPreset('${x.id}')">${escapeHtml(x.name)} · ${fmtDurFor(x.min, t)}</button>`).join('')}</div>` : `<span class="small-muted">Noch keine Vorlagen – im Bearbeiten-Modus unter „Zeit“ anlegen.</span>`}
+    inner = `${t.presets.length ? `<span class="label">Vorlagen</span>
+      <div class="row wrap" style="gap:6px;">${t.presets.map(x=>`<button class="btn btn-raised time-btn" onclick="addCountdownPreset('${x.id}')">${escapeHtml(x.name||x.letter)} · ${x.len}</button>`).join('')}</div>` : `<span class="small-muted">Noch keine Vorlagen – im Bearbeiten-Modus unter „Zeit“ anlegen.</span>`}
       <span class="label">Einmalig</span>
       <div class="row" style="gap:6px;">
-        <input type="text" id="track-name" placeholder="Name, z.B. Schutzzauber" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter') addTrackedCustom();">
-        <input type="text" id="track-dur" placeholder="${turns ? 'Turns' : 'z.B. 2 Std'}" style="width:96px;" onkeydown="if(event.key==='Enter') addTrackedCustom();">
-        <button class="btn btn-gold time-btn" onclick="addTrackedCustom()">+</button>
+        <input type="text" id="cd-name" placeholder="Name, z.B. Trank" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter') addCountdownCustom();">
+        <input type="number" id="cd-len" min="1" placeholder="${escapeHtml(t.unit||'Turn')}s" style="width:86px;" onkeydown="if(event.key==='Enter') addCountdownCustom();">
+        <button class="btn btn-gold time-btn" onclick="addCountdownCustom()">+</button>
       </div>`;
-  } else if(p.startsWith('fx:')){
-    const e = camp.tracked.find(x=>x.id===p.slice(3));
-    if(!e){ ui.timePop = null; return ''; }
-    const d = turns ? t.turnMin : 10;
-    inner = `<span class="label">${escapeHtml(e.name)} · noch ${fmtDurFor(e.left, t)} von ${fmtDurFor(e.max, t)}</span>
+  } else if(p.startsWith('cd:')){
+    const c = t.countdowns.find(x=>x.id===p.slice(3));
+    if(!c){ ui.timePop = null; return ''; }
+    inner = `<span class="label">${escapeHtml(c.name)} · ${c.count} von ${c.len}</span>
       <div class="row wrap" style="gap:6px;">
-        <button class="btn btn-raised time-btn" onclick="stepTracked('${e.id}',-${d})">− ${fmtDurFor(d, t)}</button>
-        <button class="btn btn-raised time-btn" onclick="stepTracked('${e.id}',${d})">+ ${fmtDurFor(d, t)}</button>
-        ${turns ? '' : `<button class="btn btn-raised time-btn" onclick="stepTracked('${e.id}',-60)">− 1 Std</button><button class="btn btn-raised time-btn" onclick="stepTracked('${e.id}',60)">+ 1 Std</button>`}
-        <button class="btn btn-raised time-btn" onclick="toggleTrackedPause('${e.id}')">${e.paused ? 'Weiterlaufen' : 'Pausieren'}</button>
-        <button class="btn btn-outline-wax time-btn" onclick="removeTracked('${e.id}')">Entfernen</button>
+        <button class="btn btn-raised time-btn" onclick="stepCountdown('${c.id}',-1)">−1</button>
+        <button class="btn btn-raised time-btn" onclick="stepCountdown('${c.id}',1)">+1</button>
+        <button class="btn btn-raised time-btn" onclick="toggleCountdownPause('${c.id}')">${c.paused ? 'Weiterlaufen' : 'Pausieren'}</button>
+        <button class="btn btn-outline-wax time-btn" onclick="removeCountdown('${c.id}')">Entfernen</button>
       </div>`;
-  } else if(p==='free'){
-    inner = `<span class="label">Zeit vorstellen</span>
-      <div class="row" style="gap:6px;">
-        <input type="text" id="time-free" placeholder="z.B. 45 Min, 2:30, 3 Std, 2 Tage" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter') advanceTimeFree();">
-        <button class="btn btn-gold time-btn" onclick="advanceTimeFree()">Vorstellen</button>
-      </div>`;
-  } else if(p==='clock'){
-    inner = renderClockEdit(camp);
   }
   return `<div class="time-pop">${inner}</div>`;
 }
-function renderClockEdit(camp){
-  const day = Math.floor(camp.clockMin/1440)+1, m = camp.clockMin%1440;
-  const hm = `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-  return `<span class="label">Kampagnen-Uhr</span>
-    <div class="row wrap" style="gap:6px;align-items:center;">
-      <span class="small-muted">Tag</span><input type="number" id="clock-day" min="1" value="${day}" style="width:72px;">
-      <input type="text" id="clock-time" value="${hm}" placeholder="14:20" style="width:80px;" onkeydown="if(event.key==='Enter') setCampaignClock();">
-      <button class="btn btn-gold time-btn" onclick="setCampaignClock()">Setzen</button>
-    </div>`;
-}
 // Settings in edit mode (column next to the map).
 function renderTimeSettings(map){
-  const t = normMapTime(map), camp = getActive();
-  const turns = t.mode==='turns';
-  const modeBtn = (m, label) => `<button style="padding:6px 10px;font-size:12px;${t.mode===m?'background:var(--gold);color:var(--bg);':''}" onclick="setTimeMode('${m}')">${label}</button>`;
+  const t = normMapTime(map);
+  const item = (list, x, numField, numLabel) => `<div class="row" style="gap:6px;">
+      <input type="text" value="${escapeHtml(x.letter)}" maxlength="2" oninput="onTimeItem('${list}','${x.id}','letter',this)" onchange="render()" style="width:40px;text-align:center;" title="Buchstabe über dem Kästchen">
+      <input type="text" value="${escapeHtml(x.name)}" placeholder="Name" oninput="onTimeItem('${list}','${x.id}','name',this)" onchange="render()" style="flex:1;min-width:0;">
+      ${numLabel ? `<span class="small-muted">${numLabel}</span>` : ''}
+      <input type="number" min="1" value="${x[numField]}" onchange="onTimeItem('${list}','${x.id}','${numField}',this); render();" style="width:60px;">
+      <button class="x-btn" onclick="removeTimeItem('${list}','${x.id}')" title="Entfernen">✕</button>
+    </div>`;
   return `<details class="map-fold" ${ui.timeSettingsOpen?'open':''} ontoggle="ui.timeSettingsOpen=this.open">
     <summary class="label">Zeit</summary>
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-      <div class="row wrap" style="gap:8px;align-items:center;">
-        <span class="small-muted">Zählen in</span>
-        <div class="mode-toggle" style="width:auto;">${modeBtn('turns','Turns')}${modeBtn('clock','Uhrzeit')}</div>
+      <div class="row wrap" style="gap:6px;align-items:center;">
+        <span class="small-muted">Einheit</span><input type="text" value="${escapeHtml(t.unit)}" oninput="onTimeField('unit',this)" onchange="render()" style="width:100px;">
+        <span class="small-muted">pro Block</span><input type="number" min="1" max="60" value="${t.group}" onchange="onTimeField('group',this); render();" style="width:60px;">
       </div>
-      ${turns ? `<div class="row wrap" style="gap:8px;align-items:center;">
-          <span class="small-muted">1 Turn =</span><input type="text" value="${fmtDur(t.turnMin)}" onchange="onTimeDurInput(this,'turnMin')" style="width:100px;">
-          <span class="small-muted">Kästchen pro Reihe</span><input type="number" min="1" max="60" value="${t.group}" onchange="onTimeGroupInput(this)" style="width:64px;">
-        </div>
-        <div class="row wrap" style="gap:8px;align-items:center;">
-          <span class="small-muted">Turn ${t.turn} auf dieser Karte</span>
-          ${t.turn ? `<button class="link-chip" onclick="resetMapTurns()">auf 0 setzen</button>` : ''}
-        </div>` : `<span class="small-muted">Schritt-Knöpfe (Name optional)</span>
-        ${t.steps.map(s=>`<div class="row" style="gap:6px;">
-          <input type="text" value="${escapeHtml(s.label)}" placeholder="+${fmtDur(s.min)}" oninput="onTimeStepLabel('${s.id}',this)" onchange="render()" style="flex:1;min-width:0;">
-          <input type="text" value="${fmtDur(s.min)}" onchange="onTimeStepDur('${s.id}',this)" style="width:110px;">
-          <button class="x-btn" onclick="removeTimeStep('${s.id}')" title="Knopf entfernen">✕</button>
-        </div>`).join('')}
-        <button class="btn btn-raised" style="padding:5px 10px;font-size:12px;align-self:flex-start;" onclick="addTimeStep()">+ Knopf</button>`}
-      <span class="small-muted">Vorlagen zum Verfolgen</span>
-      ${t.presets.map(p=>`<div class="row" style="gap:6px;">
-        <input type="text" value="${escapeHtml(p.name)}" placeholder="Name, z.B. Fackel" oninput="onTimePresetName('${p.id}',this)" onchange="render()" style="flex:1;min-width:0;">
-        <input type="text" value="${fmtDurFor(p.min, t)}" onchange="onTimePresetDur('${p.id}',this)" style="width:110px;">
-        <button class="x-btn" onclick="removeTimePreset('${p.id}')" title="Vorlage entfernen">✕</button>
-      </div>`).join('')}
-      <button class="btn btn-raised" style="padding:5px 10px;font-size:12px;align-self:flex-start;" onclick="addTimePreset()">+ Vorlage</button>
-      <span class="small-muted">Dauer z.B. 10 Min, 2:30, 4 Std, 7 Tage${turns ? ', 6 Turns (Zahl allein = Turns)' : ''}. Die Uhr gilt für die ganze Kampagne: ${fmtClock(camp.clockMin)}.</span>
-      ${renderClockEdit(camp)}
+      <div class="row wrap" style="gap:6px;align-items:center;">
+        <span class="small-muted">Block heißt</span><input type="text" value="${escapeHtml(t.blockName)}" placeholder="(leer)" oninput="onTimeField('blockName',this)" onchange="render()" style="width:100px;">
+        <span class="small-muted">z.B. „Tag“ bei Wachen</span>
+      </div>
+      <span class="label">Wiederkehrend</span>
+      ${t.events.map(e=>item('events', e, 'every', 'alle')).join('')}
+      <button class="btn btn-raised" style="padding:5px 10px;font-size:12px;align-self:flex-start;" onclick="addTimeItem('events')">+ Ereignis</button>
+      <span class="label">Countdown-Vorlagen</span>
+      ${t.presets.map(p=>item('presets', p, 'len', '')).join('')}
+      <button class="btn btn-raised" style="padding:5px 10px;font-size:12px;align-self:flex-start;" onclick="addTimeItem('presets')">+ Vorlage</button>
+      <div class="row wrap" style="gap:8px;align-items:center;">
+        <span class="small-muted">Zähler steht auf ${t.turn}</span>
+        ${t.turn ? `<button class="link-chip" onclick="resetMapTurns()">auf 0 setzen</button>` : ''}
+      </div>
     </div>
   </details>`;
 }

@@ -774,7 +774,7 @@ function renderMapTab(){
   html += `<button class="icon-btn raised" style="border-radius:999px;" onclick="addMap()" title="Neue Karte">+</button>`;
   if(cur) html += `<span style="margin-left:auto;"></span>
     <button class="btn ${mapSideState()==='tables'?'btn-gold':'btn-raised'} map-tables-btn" style="padding:5px 10px;font-size:13px;" onclick="toggleMapSheetTables()">Tabellen</button>
-    <button class="btn ${normMapTime(cur).on?'btn-gold':'btn-raised'}" style="padding:5px 10px;font-size:13px;" onclick="toggleTurnTracker()" title="Zeit (Turns / Uhr) auf dieser Karte ein/aus">Zeit</button>`;
+    <button class="btn ${normMapTime(cur).on?'btn-gold':'btn-raised'}" style="padding:5px 10px;font-size:13px;" onclick="toggleTurnTracker()" title="Zeit-Tracker dieser Karte ein/aus">Zeit</button>`;
   html += `</div>`;
 
   if(!cur){

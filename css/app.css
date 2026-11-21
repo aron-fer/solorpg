@@ -180,8 +180,6 @@ textarea { resize:none; font-family: Georgia, serif; }
 .sb-block { display:flex; align-items:center; gap:4px; }
 .sb-counter { display:inline-flex; align-items:center; gap:4px; }
 .sb-step { width:26px; height:26px; border-radius:8px; background:var(--panel-raised); border:1px solid var(--border); color:var(--gold); font-size:15px; line-height:1; }
-.turn-box { width:16px; height:16px; border-radius:4px; border:1px solid var(--border); background:var(--panel-raised); }
-.turn-box.on { background:var(--gold); border-color:var(--gold); }
 .turn-seg { width:10px; height:14px; border-radius:2px; background:var(--panel-raised); border:1px solid var(--border); }
 .turn-seg.on { background:#E0A43A; border-color:#E0A43A; }
 .turn-bar { display:inline-block; width:120px; height:8px; border-radius:4px; background:var(--panel-raised); border:1px solid var(--border); overflow:hidden; }
@@ -292,25 +290,29 @@ textarea { resize:none; font-family: Georgia, serif; }
   .map-side-head { padding:4px 12px 8px; }
   .map-zoom { bottom:auto; top:8px; }
 }
-/* Time strip above the map: turns or clock, tracked things, step buttons. */
-.time-strip { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:8px 10px; background:var(--panel); border:1px solid var(--border); border-radius:10px; }
-.time-main { display:flex; align-items:center; gap:8px; }
-.time-big { font-size:20px; color:var(--gold); line-height:1; }
-.time-clock { border-bottom:1px dashed var(--gold-dim); padding:2px 0; }
-.time-clock.on { border-bottom-style:solid; }
-.turn-boxes { display:inline-flex; gap:3px; }
-.turn-boxes .turn-box { width:13px; height:13px; border-radius:3px; }
-.time-fxs { display:flex; flex-wrap:wrap; gap:6px; flex:1; min-width:160px; }
+/* Time strip above the map: count, the current block of boxes with the
+   letters of events and ending countdowns above them, the countdowns. */
+.time-strip { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:8px 12px; background:var(--panel); border:1px solid var(--border); border-radius:10px; }
+.time-main { display:flex; align-items:baseline; gap:8px; }
+.time-big { font-size:22px; color:var(--gold); line-height:1; }
+.time-btns { display:flex; gap:6px; margin-left:auto; }
+.time-btn { padding:5px 11px; font-size:13px; }
+.tt-block { width:100%; display:flex; gap:4px; flex-wrap:wrap; }
+.tt-cell { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.tt-mk { height:14px; min-width:24px; font:600 11px ui-monospace, monospace; color:var(--gold); display:flex; justify-content:center; gap:1px; padding:0; background:none; border:none; cursor:default; }
+.tt-mk[title] { cursor:help; }
+.tt-end { color:#d9a35a; }
+.tt-box { width:24px; height:24px; border:1.5px solid var(--gold-dim); border-radius:4px; }
+.tt-box.on { background:var(--gold); border-color:var(--gold); }
+.tt-box.now { outline:2px solid var(--text); outline-offset:1px; }
+.time-fxs { width:100%; display:flex; flex-wrap:wrap; gap:6px; }
 .time-fx { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:999px; padding:3px 10px; font-size:13px; color:var(--text); background:transparent; }
 .time-fx.on { border-color:var(--gold); }
 .time-fx.add { color:var(--text-muted); }
-.time-fx.out { border-color:var(--wax); color:#d88; }
 .time-fx.paused .time-fx-bar { opacity:0.45; }
-.time-fx-bar { width:38px; height:5px; border-radius:3px; background:var(--panel-raised); overflow:hidden; display:inline-block; }
-.time-fx-bar i { display:block; height:100%; background:var(--gold-dim); }
+.time-fx-bar { width:40px; height:5px; border-radius:3px; background:var(--panel-raised); overflow:hidden; display:inline-block; }
+.time-fx-bar i { display:block; height:100%; background:#d9a35a; }
 .time-fx-left { font-family:ui-monospace, monospace; font-size:11px; color:var(--text-faint); }
-.time-btns { display:flex; flex-wrap:wrap; gap:6px; margin-left:auto; }
-.time-btn { padding:5px 10px; font-size:13px; }
 .time-pop { width:100%; display:flex; flex-direction:column; gap:6px; border-top:1px solid var(--border); padding-top:8px; }
 input.bad { border-color:var(--wax) !important; }
 /* Lucide icons and the drawn tick box. */
