@@ -77,7 +77,12 @@ function setJournalType(id, type){
   updateActive(camp=>({...camp, journal: camp.journal.map(j=>{
     if(j.id!==id) return j;
     if(j.type===type) return j;
-    return {...j, type, value: type==='list' ? [] : ''};
+    // Nothing is lost when switching: every line becomes a point, every
+    // point a line.
+    const value = type==='list'
+      ? String(j.value||'').split('\n').map(l=>l.replace(/^\s*(?:[-*•]\s+)?/, '').trim()).filter(Boolean)
+      : (Array.isArray(j.value) ? j.value : []).join('\n');
+    return {...j, type, value};
   })}));
   saveState(); render();
 }
