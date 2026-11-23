@@ -23,7 +23,9 @@ function renderNotesTab(){
         content = `<div style="display:flex;flex-direction:column;gap:8px;">
           ${typeToggle}
           <div style="display:flex;flex-direction:column;gap:6px;">
-            ${items.map((item,idx)=>`<div class="list-item-row"><span style="flex:1;font-size:14px;">${renderLinkedText(item)}</span><button class="x-btn" onclick="removeJournalListItem('${entry.id}',${idx})">✕</button></div>`).join('')}
+            ${items.map((item,idx)=>ui.journalItemEdit && ui.journalItemEdit.id===entry.id && ui.journalItemEdit.idx===idx
+              ? `<div class="list-item-row"><input type="text" id="journal-item-edit" value="${escapeHtml(item)}" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter'){this.blur();} if(event.key==='Escape'){cancelJournalItemEdit();}" onblur="saveJournalItemEdit(this)"></div>`
+              : `<div class="list-item-row"><span style="flex:1;font-size:14px;cursor:text;" onclick="startJournalItemEdit('${entry.id}',${idx},event)" title="Antippen zum Bearbeiten">${renderLinkedText(item)}</span><button class="x-btn" onclick="removeJournalListItem('${entry.id}',${idx})" title="Punkt löschen">✕</button></div>`).join('')}
             <div class="row">
               <input type="text" placeholder="Neuer Eintrag…" onkeydown="if(event.key==='Enter'){addJournalListItem('${entry.id}',this);}" style="flex:1;" id="journal-list-input-${entry.id}">
               <button class="btn btn-gold" style="padding:8px 12px;" onclick="addJournalListItem('${entry.id}', document.getElementById('journal-list-input-${entry.id}'))">+</button>
@@ -101,6 +103,23 @@ function addJournalListItem(id, inputEl){
   if(!text) return;
   updateActive(camp=>({...camp, journal: camp.journal.map(j=>j.id===id?{...j, value:[...(j.value||[]),text]}:j)}));
   inputEl.value='';
+  saveState(); render();
+}
+// A point is edited in place: tap it, Enter or tapping elsewhere saves.
+function startJournalItemEdit(id, idx, evt){
+  if(evt && evt.target.closest('a, button, .entity-link')) return;   // links keep working
+  ui.journalItemEdit = {id, idx}; render();
+  const el = document.getElementById('journal-item-edit');
+  if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+function cancelJournalItemEdit(){ ui.journalItemEdit = null; render(); }
+function saveJournalItemEdit(el){
+  const e = ui.journalItemEdit;
+  if(!e) return;
+  ui.journalItemEdit = null;
+  const text = el.value.trim();
+  updateActive(camp=>({...camp, journal: camp.journal.map(j=>j.id!==e.id ? j
+    : {...j, value: text ? j.value.map((v,i)=>i===e.idx ? text : v) : j.value.filter((_,i)=>i!==e.idx)})}));
   saveState(); render();
 }
 function removeJournalListItem(id, idx){
