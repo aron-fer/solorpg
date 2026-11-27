@@ -326,3 +326,5 @@ input.bad { border-color:var(--wax) !important; }
 .roll-popup-text { line-height:1.55; }
 .list-item-row.editing { border-color:var(--gold-dim); }
 .item-edit { flex:1; min-width:0; border:none; background:transparent; padding:0; font-size:14px; line-height:1.4; outline:none; resize:none; overflow:hidden; color:inherit; font-family:inherit; }
+.battle-more { display:flex; flex-direction:column; gap:4px; border-top:1px solid var(--border); padding-top:6px; }
+.battle-more-btn { align-self:flex-start; font-size:12px; color:var(--text-faint); text-decoration:none; }

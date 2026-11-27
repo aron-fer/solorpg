@@ -251,6 +251,8 @@ function getActiveCampaign(){
 }
 function getCurrentCharacter(){
   const active = getActive();
+  // A character's statblock shown elsewhere (Kampf tab): its buttons act on that character.
+  if(ui.sbCharId){ const c = active.characters.find(c=>c.id===ui.sbCharId); if(c) return c; }
   return active.characters.find(c=>c.id===active.activeCharacterId) || active.characters[0] || null;
 }
 function updateActive(updater){

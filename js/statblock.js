@@ -90,6 +90,16 @@ function sbSectionLines(section){
   return html;
 }
 
+// The statblock's lines (attributes, saves, weapons, spells …); skip(section, f)
+// leaves fields out that are shown elsewhere.
+function statblockLines(c, skip){
+  const lines = [];
+  c.sections.forEach(section=>{
+    if(section.sb==='line'){ lines.push(sbSectionLines(section)); return; }
+    section.fields.forEach(f=>{ if(f.sb==='line' && !(skip && skip(section, f))) lines.push(sbFieldLine(section, f, sbLabel(f))); });
+  });
+  return lines.filter(Boolean);
+}
 function renderCharacterStatblock(c){
   const title = [], head = new Map(), lines = [];
   c.sections.forEach(section=>{
@@ -150,7 +160,12 @@ function suggestSbFor(section, f){
   return null;
 }
 function applyStatblockSuggestions(){
-  updateCurrentCharacter(c=>({...c, sections: c.sections.map(s=>{
+  updateCurrentCharacter(withStatblockSuggestions);
+  saveState(); render();
+}
+// The character with suggested placements filled in where none are set.
+function withStatblockSuggestions(c){
+  return {...c, sections: c.sections.map(s=>{
     if(s.sb) return s;
     const sn = s.name.toLowerCase();
     const simple = s.fields.length && s.fields.every(f=>['number','counter','text'].includes(f.type));
@@ -160,6 +175,5 @@ function applyStatblockSuggestions(){
       const sug = suggestSbFor(s, f);
       return sug ? {...f, sbAbbr:'', sbCols:null, ...sug} : f;
     })};
-  })}));
-  saveState(); render();
+  })};
 }

@@ -13,6 +13,10 @@ window.addEventListener('resize', function(){
     render();
   }
 });
+// Statblock lines of a character shown in the Kampf tab act on that character
+// (ui.sbCharId, set when touching them); touching anywhere else ends that.
+document.addEventListener('pointerdown', ()=>{ ui.sbCharId = null; }, true);
+document.addEventListener('focusin', ()=>{ ui.sbCharId = null; }, true);
 loadState().then(()=>loadTerrainImages()).then(()=>{
   startupBackup();
   render();

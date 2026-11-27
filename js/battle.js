@@ -73,6 +73,12 @@ function renderPartyRow(sb){
     const label = f.sb ? sbLabel(f) : (sug.sbAbbr || f.name);
     return t ? `<div class="battle-stats-atk"><span class="sb-lbl">${escapeHtml(label)}</span> ${t}</div>` : '';
   })).join('');
+  // "Mehr": the rest of the character's statblock (spells, saves, attributes …).
+  const open = (ui.partyOpen||[]).includes(sb.id);
+  const isWeapon = (section, f) => f.type==='table' && /weapon|melee|missile|waffe|nahkampf|fernkampf/i.test(f.name+' '+section.name);
+  const configured = c.sections.some(s=>s.sb || s.fields.some(f=>f.sb));
+  const more = statblockLines(configured ? c : withStatblockSuggestions(c), (section, f)=>isWeapon(section, f) || f.type==='counter');
+  const moreHtml = open ? `<div class="battle-more" onpointerdown="ui.sbCharId='${c.id}'" onfocusin="ui.sbCharId='${c.id}'">${more.join('') || '<span class="small-muted">Im Charakter-Statblock ist nichts weiter eingerichtet.</span>'}</div>` : '';
   return `<div class="panel battle-row">
     <div class="sb-head" style="padding:0;">
       <button class="sb-name" style="font-size:16px;text-align:left;" onclick="openCharacterStatblock('${c.id}')" title="Statblock öffnen">${escapeHtml(c.name)}</button>
@@ -81,7 +87,14 @@ function renderPartyRow(sb){
       ${ui.managing ? `<button class="x-btn sb-edit" onclick="deleteStatblock('${sb.id}')" title="Aus dem Kampf nehmen">✕</button>` : ''}
     </div>
     ${weapons}
+    ${moreHtml}
+    <button class="link-chip battle-more-btn" onclick="togglePartyMore('${sb.id}')">${open ? 'Weniger ▴' : 'Mehr ▾'}</button>
   </div>`;
+}
+function togglePartyMore(id){
+  const o = ui.partyOpen || [];
+  ui.partyOpen = o.includes(id) ? o.filter(x=>x!==id) : [...o, id];
+  render();
 }
 function openCharacterStatblock(charId){
   updateActive(camp=>({...camp, activeCharacterId:charId}));
