@@ -472,6 +472,8 @@ function fallbackCopy(text){
   return ok;
 }
 let toastTimer = null;
+// A textarea as tall as its text (Firefox has no field-sizing yet).
+function autoGrow(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight+'px'; }
 // Small square tick box, drawn in CSS (instead of the ☑ / ☐ characters).
 function checkBox(on){ return `<span class="cb ${on?'on':''}" aria-hidden="true"></span>`; }
 function showToast(msg){

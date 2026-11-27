@@ -24,8 +24,8 @@ function renderNotesTab(){
           ${typeToggle}
           <div style="display:flex;flex-direction:column;gap:6px;">
             ${items.map((item,idx)=>ui.journalItemEdit && ui.journalItemEdit.id===entry.id && ui.journalItemEdit.idx===idx
-              ? `<div class="list-item-row editing"><input type="text" id="journal-item-edit" value="${escapeHtml(item)}" style="flex:1;min-width:0;border:none;background:transparent;padding:0;font-size:14px;outline:none;" onkeydown="if(event.key==='Enter'){this.blur();} if(event.key==='Escape'){cancelJournalItemEdit();}" onblur="saveJournalItemEdit(this)"></div>`
-              : `<div class="list-item-row"><span style="flex:1;font-size:14px;cursor:text;" onclick="startJournalItemEdit('${entry.id}',${idx},event)" title="Antippen zum Bearbeiten">${renderLinkedText(item)}</span><button class="x-btn" onclick="removeJournalListItem('${entry.id}',${idx})" title="Punkt löschen">✕</button></div>`).join('')}
+              ? `<div class="list-item-row editing"><textarea id="journal-item-edit" rows="1" class="item-edit" oninput="autoGrow(this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();} if(event.key==='Escape'){cancelJournalItemEdit();}" onblur="saveJournalItemEdit(this)">${escapeHtml(item)}</textarea></div>`
+              : `<div class="list-item-row"><span style="flex:1;font-size:14px;line-height:1.4;cursor:text;" onclick="startJournalItemEdit('${entry.id}',${idx},event)" title="Antippen zum Bearbeiten">${renderLinkedText(item)}</span><button class="x-btn" onclick="removeJournalListItem('${entry.id}',${idx})" title="Punkt löschen">✕</button></div>`).join('')}
             <div class="row">
               <input type="text" placeholder="Neuer Eintrag…" onkeydown="if(event.key==='Enter'){addJournalListItem('${entry.id}',this);}" style="flex:1;" id="journal-list-input-${entry.id}">
               <button class="btn btn-gold" style="padding:8px 12px;" onclick="addJournalListItem('${entry.id}', document.getElementById('journal-list-input-${entry.id}'))">+</button>
@@ -110,7 +110,7 @@ function startJournalItemEdit(id, idx, evt){
   if(evt && evt.target.closest('a, button, .entity-link')) return;   // links keep working
   ui.journalItemEdit = {id, idx}; render();
   const el = document.getElementById('journal-item-edit');
-  if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  if(el){ autoGrow(el); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
 }
 function cancelJournalItemEdit(){ ui.journalItemEdit = null; render(); }
 function saveJournalItemEdit(el){
