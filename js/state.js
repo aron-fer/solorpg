@@ -264,6 +264,8 @@ function updateCurrentCharacter(updater){
 // `title` (optional): the table/die that was rolled; the results list shows it as the card's heading.
 function pushLog(text, ctx, quiet, title){
   ctx = ctx || 'oracle';
+  // PC with the oracle docked: fights use its dice and results too.
+  if(ctx==='battle' && typeof battleUsesDock==='function' && battleUsesDock()) ctx = 'oracle';
   const field = ctx==='battle' ? 'battleLog' : 'log';
   updateActive(camp => ({...camp, [field]: [{id:uid(), time:timeNow(), text, ...(title ? {title} : {})}, ...camp[field]].slice(0,200)}));
   saveState();

@@ -6,6 +6,8 @@ function updateStatblock(id, fn){
   updateActive(camp=>({...camp, statblocks: camp.statblocks.map(sb=>sb.id===id ? fn(sb) : sb)}));
 }
 
+function battleUsesDock(){ return typeof isDesk==='function' && isDesk() && deskDockOpen(); }
+
 // ---- Party ----
 function toggleStatblockCharPicker(){ ui.showStatblockCharPicker = !ui.showStatblockCharPicker; render(); }
 function addStatblockFromCharacter(charId){
@@ -23,7 +25,7 @@ function sbEffective(c){
   c.sections.forEach(section=>section.fields.forEach(f=>{
     const sug = configured ? null : suggestSbFor(section, f);
     const sb = configured ? f.sb : (sug && sug.sb);
-    if(sb) out.push({section, f, sb, label: configured ? sbLabel(f) : ((sug.sbAbbr||'').trim() || sbDefaultAbbr(f.name))});
+    if(sb) out.push({section, f, sb, label: configured ? sbLabel(f) : ((sug.sbAbbr||'').trim() || sbDefaultAbbr(f.name)), cols: configured ? f.sbCols : (sug.sbCols||null)});
   }));
   return out;
 }
@@ -31,6 +33,14 @@ function battleCounter(c, section, f){
   const a = `'${section.id}','${f.id}'`;
   return [`<button class="sb-step" onclick="incrementFieldCounter(${a},-1,'${c.id}')" aria-label="−1">−</button>`,
           `<button class="sb-step" onclick="incrementFieldCounter(${a},1,'${c.id}')" aria-label="+1">+</button>`];
+}
+// "Long sword #A 1/1 +1 D 1d8" – like the enemies' attack line.
+function battleWeaponRows(f, colsWanted){
+  const tv = f.value || {columns:[], rows:[]};
+  const cols = (colsWanted && colsWanted.length ? colsWanted : tv.columns.map((_,i)=>i)).filter(i=>i<tv.columns.length);
+  const pre = i => { const c = String(tv.columns[i]||'').toLowerCase(); return /rate/.test(c) ? '#A ' : /dam/.test(c) ? 'D ' : ''; };
+  const rows = tv.rows.map(r=>cols.map(i=>sbIsEmpty(r[i]) ? '' : (i===cols[0] ? '' : pre(i)) + String(r[i]).trim())).filter(cells=>cells.some(Boolean) && cells[0]);
+  return rows.map(([first, ...rest])=>`<span class="sb-item"><b>${escapeHtml(first)}</b>${rest.filter(Boolean).map(x=>' '+escapeHtml(x)).join('')}</span>`).join('<span class="sb-sep"> · </span>');
 }
 function renderPartyRow(sb){
   const c = getActive().characters.find(x=>x.id===sb.charId);
@@ -54,6 +64,15 @@ function renderPartyRow(sb){
     const ready = v.levels.reduce((n,l)=>n+l.prepared.filter(p=>!p.cast).length,0), total = v.levels.reduce((n,l)=>n+l.slots,0);
     if(total) extras.push(`<button class="sb-head-item" onclick="openCharacterStatblock('${c.id}')" title="Zum Statblock"><span class="sb-lbl">Spells</span> <b>${ready}</b><span class="sb-lbl">/${total}</span></button>`);
   }));
+  // Weapons (statblock lines of weapon tables): name, attack rate, damage …
+  // Shown in the fight even if the statblock leaves them out; columns as in
+  // the statblock, else name, attack rate, modifier, damage.
+  const weapons = c.sections.flatMap(section=>section.fields.filter(f=>f.type==='table' && /weapon|melee|missile|waffe|nahkampf|fernkampf/i.test(f.name+' '+section.name)).map(f=>{
+    const sug = suggestSbFor(section, f) || {};
+    const t = battleWeaponRows(f, f.sb==='line' && f.sbCols && f.sbCols.length ? f.sbCols : sug.sbCols);
+    const label = f.sb ? sbLabel(f) : (sug.sbAbbr || f.name);
+    return t ? `<div class="battle-stats-atk"><span class="sb-lbl">${escapeHtml(label)}</span> ${t}</div>` : '';
+  })).join('');
   return `<div class="panel battle-row">
     <div class="sb-head" style="padding:0;">
       <button class="sb-name" style="font-size:16px;text-align:left;" onclick="openCharacterStatblock('${c.id}')" title="Statblock öffnen">${escapeHtml(c.name)}</button>
@@ -61,6 +80,7 @@ function renderPartyRow(sb){
       ${extras.join('')}
       ${ui.managing ? `<button class="x-btn sb-edit" onclick="deleteStatblock('${sb.id}')" title="Aus dem Kampf nehmen">✕</button>` : ''}
     </div>
+    ${weapons}
   </div>`;
 }
 function openCharacterStatblock(charId){
@@ -381,9 +401,8 @@ function renderBattleTab(){
   const party = active.statblocks.filter(sb=>sb.kind==='pc');
   const enemies = active.statblocks.filter(sb=>sb.kind!=='pc');
   const inBattle = new Set(party.map(sb=>sb.charId));
-  let html = `<div class="grid-cards">`;
-  html += renderResultsPanel('span-all', 'battle');
-  html += `</div>`;
+  const dock = battleUsesDock();   // PC: dice and results are in the docked oracle
+  let html = dock ? '' : `<div class="grid-cards">${renderResultsPanel('span-all', 'battle')}</div>`;
 
   html += `<div class="row between"><span class="label">Party</span>
     <button class="btn ${ui.showStatblockCharPicker?'btn-gold':'btn-raised'}" style="padding:4px 8px;font-size:12px;" onclick="toggleStatblockCharPicker()">+ Charakter</button></div>`;
@@ -422,7 +441,7 @@ function renderBattleTab(){
   html += enemies.length ? `<div class="battle-enemies">${enemies.map(renderEnemyBlock).join('')}</div>`
     : `<p class="small-muted" style="margin:0;">Noch keine Gegner. „Statblock einfügen" liest Statblocks im Hyperborea-Format; die HP werden nach HD ausgewürfelt.</p>`;
   // Dice below the fight: party and enemies come first.
-  html += `<div class="grid-cards" style="margin-top:6px;">${renderDiceRollerPanel('battle')}</div>`;
+  if(!dock) html += `<div class="grid-cards" style="margin-top:6px;">${renderDiceRollerPanel('battle')}</div>`;
   const bar = renderBattleDamageBar();
   if(bar) html += bar + `<div style="height:56px;"></div>`; // room so the bar never hides the last card
   return html;
