@@ -24,7 +24,7 @@ function renderNotesTab(){
           ${typeToggle}
           <div style="display:flex;flex-direction:column;gap:6px;">
             ${items.map((item,idx)=>ui.journalItemEdit && ui.journalItemEdit.id===entry.id && ui.journalItemEdit.idx===idx
-              ? `<div class="list-item-row"><input type="text" id="journal-item-edit" value="${escapeHtml(item)}" style="flex:1;min-width:0;" onkeydown="if(event.key==='Enter'){this.blur();} if(event.key==='Escape'){cancelJournalItemEdit();}" onblur="saveJournalItemEdit(this)"></div>`
+              ? `<div class="list-item-row editing"><input type="text" id="journal-item-edit" value="${escapeHtml(item)}" style="flex:1;min-width:0;border:none;background:transparent;padding:0;font-size:14px;outline:none;" onkeydown="if(event.key==='Enter'){this.blur();} if(event.key==='Escape'){cancelJournalItemEdit();}" onblur="saveJournalItemEdit(this)"></div>`
               : `<div class="list-item-row"><span style="flex:1;font-size:14px;cursor:text;" onclick="startJournalItemEdit('${entry.id}',${idx},event)" title="Antippen zum Bearbeiten">${renderLinkedText(item)}</span><button class="x-btn" onclick="removeJournalListItem('${entry.id}',${idx})" title="Punkt löschen">✕</button></div>`).join('')}
             <div class="row">
               <input type="text" placeholder="Neuer Eintrag…" onkeydown="if(event.key==='Enter'){addJournalListItem('${entry.id}',this);}" style="flex:1;" id="journal-list-input-${entry.id}">
